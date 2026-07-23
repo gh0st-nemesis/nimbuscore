@@ -56,6 +56,10 @@ func TestServiceResolvesEndpointsFromMatchingRunningPods(t *testing.T) {
 		t.Fatalf("CreateService: %v", err)
 	}
 
+	if created.GetSpec().GetNodePort() < 30000 || created.GetSpec().GetNodePort() > 32767 {
+		t.Fatalf("node_port = %d, want an auto-allocated port in [30000, 32767]", created.GetSpec().GetNodePort())
+	}
+
 	endpoints := created.GetStatus().GetEndpoints()
 	if len(endpoints) != 1 {
 		t.Fatalf("got %d endpoints, want 1 (only the Running pod matching the selector)", len(endpoints))
@@ -66,8 +70,60 @@ func TestServiceResolvesEndpointsFromMatchingRunningPods(t *testing.T) {
 	if endpoints[0].GetNodeIp() != "10.0.0.5" {
 		t.Errorf("endpoint node_ip = %q, want 10.0.0.5", endpoints[0].GetNodeIp())
 	}
-	if endpoints[0].GetNodePort() != 80 {
-		t.Errorf("endpoint node_port = %d, want 80 (falls back to spec.port when target_port is unset)", endpoints[0].GetNodePort())
+	if endpoints[0].GetNodePort() != created.GetSpec().GetNodePort() {
+		t.Errorf("endpoint node_port = %d, want the service's allocated node_port %d", endpoints[0].GetNodePort(), created.GetSpec().GetNodePort())
+	}
+}
+
+func TestCreateServiceAllocatesDistinctNodePorts(t *testing.T) {
+	ctx := context.Background()
+	svc := apiserver.NewServiceService(store.NewMemStore())
+
+	first, err := svc.CreateService(ctx, &v1.CreateServiceRequest{
+		Service: &v1.Service{
+			Metadata: &v1.ObjectMeta{Name: "a", Namespace: "default"},
+			Spec:     &v1.ServiceSpec{Selector: map[string]string{"app": "a"}, Port: 80},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateService a: %v", err)
+	}
+	second, err := svc.CreateService(ctx, &v1.CreateServiceRequest{
+		Service: &v1.Service{
+			Metadata: &v1.ObjectMeta{Name: "b", Namespace: "default"},
+			Spec:     &v1.ServiceSpec{Selector: map[string]string{"app": "b"}, Port: 80},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateService b: %v", err)
+	}
+
+	if first.GetSpec().GetNodePort() == second.GetSpec().GetNodePort() {
+		t.Errorf("both services were allocated the same node_port %d, want distinct ports", first.GetSpec().GetNodePort())
+	}
+}
+
+func TestCreateServiceRejectsExplicitlyConflictingNodePort(t *testing.T) {
+	ctx := context.Background()
+	svc := apiserver.NewServiceService(store.NewMemStore())
+
+	if _, err := svc.CreateService(ctx, &v1.CreateServiceRequest{
+		Service: &v1.Service{
+			Metadata: &v1.ObjectMeta{Name: "a", Namespace: "default"},
+			Spec:     &v1.ServiceSpec{Selector: map[string]string{"app": "a"}, Port: 80, NodePort: 30500},
+		},
+	}); err != nil {
+		t.Fatalf("CreateService a: %v", err)
+	}
+
+	_, err := svc.CreateService(ctx, &v1.CreateServiceRequest{
+		Service: &v1.Service{
+			Metadata: &v1.ObjectMeta{Name: "b", Namespace: "default"},
+			Spec:     &v1.ServiceSpec{Selector: map[string]string{"app": "b"}, Port: 80, NodePort: 30500},
+		},
+	})
+	if err == nil {
+		t.Fatal("CreateService b succeeded despite requesting an already-allocated node_port, want error")
 	}
 }
 

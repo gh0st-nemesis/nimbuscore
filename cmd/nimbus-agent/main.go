@@ -114,7 +114,7 @@ func main() {
 
 	go heartbeatLoop(ctx, nodeClient, *nodeName, capacity, *heartbeatInterval)
 
-	a := agent.New(agent.Config{NodeName: *nodeName}, v1.NewPodServiceClient(conn))
+	a := agent.New(agent.Config{NodeName: *nodeName, InternalIP: internalIP}, v1.NewPodServiceClient(conn), v1.NewServiceServiceClient(conn))
 	if err := a.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("agent: %v", err)
 	}

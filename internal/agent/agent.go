@@ -9,21 +9,24 @@ import (
 )
 
 type Config struct {
-	NodeName string
-	Interval time.Duration
+	NodeName   string
+	InternalIP string
+	Interval   time.Duration
 }
 
 type Agent struct {
-	cfg     Config
-	pods    v1.PodServiceClient
-	runtime *processRuntime
+	cfg       Config
+	pods      v1.PodServiceClient
+	services  v1.ServiceServiceClient
+	runtime   *processRuntime
+	nodePorts *nodePortManager
 }
 
-func New(cfg Config, pods v1.PodServiceClient) *Agent {
+func New(cfg Config, pods v1.PodServiceClient, services v1.ServiceServiceClient) *Agent {
 	if cfg.Interval <= 0 {
 		cfg.Interval = 2 * time.Second
 	}
-	return &Agent{cfg: cfg, pods: pods, runtime: newProcessRuntime()}
+	return &Agent{cfg: cfg, pods: pods, services: services, runtime: newProcessRuntime(), nodePorts: newNodePortManager()}
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -35,13 +38,27 @@ func (a *Agent) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			a.runtime.stopAll()
+			a.nodePorts.stopAll()
 			return ctx.Err()
 		case ev := <-a.runtime.exited:
 			a.handleExit(ctx, ev)
 		case <-ticker.C:
 			a.reconcile(ctx)
+			a.reconcileServices(ctx)
 		}
 	}
+}
+
+func (a *Agent) reconcileServices(ctx context.Context) {
+	if a.services == nil || a.cfg.InternalIP == "" {
+		return
+	}
+	resp, err := a.services.ListServices(ctx, &v1.ListServicesRequest{})
+	if err != nil {
+		log.Printf("agent: list services: %v", err)
+		return
+	}
+	a.nodePorts.reconcile(resp.GetItems(), a.cfg.InternalIP)
 }
 
 func (a *Agent) reconcile(ctx context.Context) {

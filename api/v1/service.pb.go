@@ -26,6 +26,7 @@ type ServiceSpec struct {
 	Selector      map[string]string      `protobuf:"bytes,1,rep,name=selector,proto3" json:"selector,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Port          int32                  `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`
 	TargetPort    int32                  `protobuf:"varint,3,opt,name=target_port,json=targetPort,proto3" json:"target_port,omitempty"`
+	NodePort      int32                  `protobuf:"varint,4,opt,name=node_port,json=nodePort,proto3" json:"node_port,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -77,6 +78,13 @@ func (x *ServiceSpec) GetPort() int32 {
 func (x *ServiceSpec) GetTargetPort() int32 {
 	if x != nil {
 		return x.TargetPort
+	}
+	return 0
+}
+
+func (x *ServiceSpec) GetNodePort() int32 {
+	if x != nil {
+		return x.NodePort
 	}
 	return 0
 }
@@ -521,12 +529,13 @@ var File_service_proto protoreflect.FileDescriptor
 
 const file_service_proto_rawDesc = "" +
 	"\n" +
-	"\rservice.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\"\xc5\x01\n" +
+	"\rservice.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\"\xe2\x01\n" +
 	"\vServiceSpec\x12D\n" +
 	"\bselector\x18\x01 \x03(\v2(.nimbuscore.v1.ServiceSpec.SelectorEntryR\bselector\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\x05R\x04port\x12\x1f\n" +
 	"\vtarget_port\x18\x03 \x01(\x05R\n" +
-	"targetPort\x1a;\n" +
+	"targetPort\x12\x1b\n" +
+	"\tnode_port\x18\x04 \x01(\x05R\bnodePort\x1a;\n" +
 	"\rSelectorEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"b\n" +

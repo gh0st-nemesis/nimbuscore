@@ -66,7 +66,7 @@ func TestAgentRunsWASMPodToCompletion(t *testing.T) {
 	}
 	client.seed(pod)
 
-	a := New(Config{NodeName: "test-node", Interval: 30 * time.Millisecond}, client)
+	a := New(Config{NodeName: "test-node", Interval: 30 * time.Millisecond}, client, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

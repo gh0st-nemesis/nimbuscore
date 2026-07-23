@@ -69,6 +69,7 @@ func DefaultRBACBindings() []rbac.Binding {
 		Rules: []rbac.Rule{
 			{Resources: []string{"nodes"}, Verbs: []string{"create", "update"}},
 			{Resources: []string{"pods"}, Verbs: []string{"list", "update"}},
+			{Resources: []string{"services"}, Verbs: []string{"list"}},
 		},
 	}
 

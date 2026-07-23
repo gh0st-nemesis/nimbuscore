@@ -84,7 +84,7 @@ func TestAgentRunsAssignedPodToCompletion(t *testing.T) {
 	pod := testPod("done", helperCommand(t, "exit0"), v1.RestartPolicy_RESTART_POLICY_NEVER)
 	client.seed(pod)
 
-	a := New(Config{NodeName: "test-node", Interval: 30 * time.Millisecond}, client)
+	a := New(Config{NodeName: "test-node", Interval: 30 * time.Millisecond}, client, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -98,7 +98,7 @@ func TestAgentRestartsFailedPodUnderAlwaysPolicy(t *testing.T) {
 	pod := testPod("flaky", helperCommand(t, "exit1"), v1.RestartPolicy_RESTART_POLICY_ALWAYS)
 	client.seed(pod)
 
-	a := New(Config{NodeName: "test-node", Interval: 30 * time.Millisecond}, client)
+	a := New(Config{NodeName: "test-node", Interval: 30 * time.Millisecond}, client, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -120,7 +120,7 @@ func TestAgentIgnoresPodsAssignedToOtherNodes(t *testing.T) {
 	pod.Spec.NodeName = "some-other-node"
 	client.seed(pod)
 
-	a := New(Config{NodeName: "test-node", Interval: 30 * time.Millisecond}, client)
+	a := New(Config{NodeName: "test-node", Interval: 30 * time.Millisecond}, client, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

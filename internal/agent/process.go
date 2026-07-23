@@ -142,7 +142,7 @@ func (r *processRuntime) startDocker(pod *v1.Pod) error {
 
 	args := []string{"run", "-d", "--name", name}
 	for _, port := range c.GetContainerPorts() {
-		args = append(args, "-p", fmt.Sprintf("%d:%d", port, port))
+		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", port, port))
 	}
 	if limits := c.GetResources().GetLimits(); limits != nil {
 		if millis := limits.GetCpuMillis(); millis > 0 {

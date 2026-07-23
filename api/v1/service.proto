@@ -10,6 +10,7 @@ message ServiceSpec {
   map<string, string> selector = 1;
   int32 port = 2;
   int32 target_port = 3;
+  int32 node_port = 4;
 }
 
 message ServiceEndpoint {

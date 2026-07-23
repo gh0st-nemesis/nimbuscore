@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -9,6 +10,11 @@ import (
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
+)
+
+const (
+	nodePortRangeMin = 30000
+	nodePortRangeMax = 32767
 )
 
 type serviceService struct {
@@ -32,10 +38,62 @@ func (svc *serviceService) CreateService(ctx context.Context, req *v1.CreateServ
 	if meta.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "service.metadata.name is required")
 	}
+	if s.Spec == nil {
+		s.Spec = &v1.ServiceSpec{}
+	}
+
+	if s.Spec.NodePort == 0 {
+		port, err := svc.allocateNodePort(ctx)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "allocate node_port: %v", err)
+		}
+		s.Spec.NodePort = port
+	} else if used, err := svc.nodePortInUse(ctx, s.Spec.NodePort, meta.GetNamespace(), meta.GetName()); err != nil {
+		return nil, status.Errorf(codes.Internal, "check node_port availability: %v", err)
+	} else if used {
+		return nil, status.Errorf(codes.AlreadyExists, "node_port %d is already allocated to another service", s.Spec.NodePort)
+	}
+
 	if err := svc.services.Put(ctx, meta.GetNamespace(), meta.GetName(), s); err != nil {
 		return nil, status.Errorf(codes.Internal, "create service: %v", err)
 	}
 	return svc.resolve(ctx, s)
+}
+
+func (svc *serviceService) allocateNodePort(ctx context.Context) (int32, error) {
+	all, err := svc.services.List(ctx, "")
+	if err != nil {
+		return 0, err
+	}
+	used := make(map[int32]bool, len(all))
+	for _, s := range all {
+		if p := s.GetSpec().GetNodePort(); p != 0 {
+			used[p] = true
+		}
+	}
+	for port := int32(nodePortRangeMin); port <= nodePortRangeMax; port++ {
+		if !used[port] {
+			return port, nil
+		}
+	}
+	return 0, fmt.Errorf("no free node_port left in range %d-%d", nodePortRangeMin, nodePortRangeMax)
+}
+
+func (svc *serviceService) nodePortInUse(ctx context.Context, port int32, namespace, name string) (bool, error) {
+	all, err := svc.services.List(ctx, "")
+	if err != nil {
+		return false, err
+	}
+	for _, s := range all {
+		if s.GetSpec().GetNodePort() != port {
+			continue
+		}
+		if s.GetMetadata().GetNamespace() == namespace && s.GetMetadata().GetName() == name {
+			continue
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func (svc *serviceService) GetService(ctx context.Context, req *v1.GetServiceRequest) (*v1.Service, error) {
@@ -76,11 +134,6 @@ func (svc *serviceService) resolve(ctx context.Context, s *v1.Service) (*v1.Serv
 		return s, nil
 	}
 
-	targetPort := s.GetSpec().GetTargetPort()
-	if targetPort == 0 {
-		targetPort = s.GetSpec().GetPort()
-	}
-
 	allPods, err := svc.pods.List(ctx, s.GetMetadata().GetNamespace())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "resolve service endpoints: list pods: %v", err)
@@ -105,7 +158,7 @@ func (svc *serviceService) resolve(ctx context.Context, s *v1.Service) (*v1.Serv
 		endpoints = append(endpoints, &v1.ServiceEndpoint{
 			PodName:  p.GetMetadata().GetName(),
 			NodeIp:   node.GetStatus().GetInternalIp(),
-			NodePort: targetPort,
+			NodePort: s.GetSpec().GetNodePort(),
 		})
 	}
 

@@ -99,12 +99,16 @@ d'estimation de coût FinOps exposé via gRPC.
 - **`internal/netpolicy`** — moteur de policy réseau : `Allowed(policies, source, dest, protocole,
   port)`, **deny-by-default** même en l'absence de toute policy (contrairement à Kubernetes, où un pod
   non sélectionné reste ouvert par défaut — différenciateur voulu, section 01 du design doc).
-- **`Service`** (`ServiceService`, style NodePort) — pas de réconciliateur dédié : `GetService`/
+- **`Service`** (`ServiceService`, style NodePort) — `CreateService` **alloue automatiquement**
+  `spec.node_port` dans la plage 30000-32767 (comme le fait l'apiserver Kubernetes) si non précisé
+  explicitement, en évitant toute collision avec un service déjà enregistré. `GetService`/
   `ListServices` résolvent en direct les pods `Running` dont les labels correspondent à
-  `spec.selector`, et pour chacun renvoient `<node.status.internal_ip>:<target_port ou port>` dans
-  `status.endpoints`. `nimbus-agent` détecte et rapporte sa propre IP joignable (`net.Dial` vers le
-  control plane, ou `-node-ip` explicite) à l'enrôlement. C'est le lien direct « port + IP » : pas de
-  ClusterIP virtuelle ni de proxy — chaque endpoint pointe directement le nœud qui héberge le pod.
+  `spec.selector` et renvoient `<node.status.internal_ip>:<node_port>` dans `status.endpoints`.
+  `nimbus-agent` détecte et rapporte sa propre IP joignable (`net.Dial` vers le control plane, ou
+  `-node-ip` explicite) à l'enrôlement, et fait tourner un vrai relais TCP par port alloué
+  (`internal/agent/nodeport.go`) qui écoute sur `node_port` et redirige vers le port du conteneur en
+  loopback — même principe que `kube-proxy` : le port externe est découplé du port interne du
+  conteneur. Pas de ClusterIP virtuelle : chaque endpoint pointe directement le nœud qui héberge le pod.
 - **`internal/telemetry`** — OpenTelemetry natif : traces automatiques de chaque appel gRPC
   (`otelgrpc`), métriques (décisions d'admission), exporteurs `none`/`stdout`/`otlp`.
 - **`internal/policy`** — moteur de policy natif en CEL (Common Expression Language — le même langage
@@ -292,24 +296,31 @@ nimbusctl run web --image=nginx:alpine --port=80          # un vrai nginx, port 
 nimbusctl run api --image=alpine:v1 --replicas=3 -- sleep 3600   # un Deployment à 3 réplicas
 ```
 
-`--port` (répétable) déclare le(s) port(s) que le process écoute **à l'intérieur** du conteneur ; le
-mapping est un passthrough 1:1 (port hôte = port conteneur). Sans `--image` ni `-- <commande>`,
-`nimbusctl run` prévient qu'il n'y a rien à exécuter.
+`--port` (répétable) déclare le(s) port(s) que le process écoute **à l'intérieur** du conteneur —
+Docker le publie uniquement sur `127.0.0.1` du nœud (pas d'accès externe direct). Sans `--image` ni
+`-- <commande>`, `nimbusctl run` prévient qu'il n'y a rien à exécuter.
 
-Trouver le lien réel une fois le pod `Running`, en créant un `Service` qui sélectionne ses labels
-(`nimbusctl run` pose automatiquement `app=<nom>`) :
+Trouver le lien réel, en créant un `Service` qui sélectionne ses labels (`nimbusctl run` pose
+automatiquement `app=<nom>`) — comme un vrai `Service` Kubernetes de type NodePort, le port
+externe est **généré automatiquement** par le control plane (plage 30000-32767), pas choisi à la
+main :
 
 ```bash
 cat > web-svc.json <<'EOF'
 {"kind":"Service","metadata":{"name":"web-svc","namespace":"default"},
- "spec":{"selector":{"app":"web"},"port":80}}
+ "spec":{"selector":{"app":"web"},"port":80,"target_port":80}}
 EOF
 nimbusctl apply -f web-svc.json
 nimbusctl get services
 # NAME     NAMESPACE  PORT  ENDPOINTS
-# web-svc  default    80    192.168.1.89:80
-curl http://192.168.1.89:80/
+# web-svc  default    80    192.168.1.89:30000    <- port auto-alloué, pas 80
+curl http://192.168.1.89:30000/
 ```
+
+Le nœud qui héberge le pod fait tourner un vrai relais TCP (`nimbus-agent`, `internal/agent/nodeport.go`)
+qui écoute sur le port alloué (`0.0.0.0:30000`) et redirige vers `127.0.0.1:<target_port>` — c'est le
+même principe que `kube-proxy` : le port externe est totalement découplé du port interne du conteneur
+et du cycle de vie du process, seul le `Service` le connaît.
 
 Supprimer une ressource, façon `kubectl delete` :
 
@@ -448,14 +459,18 @@ correspondant, est **refusé par défaut**.
 >   échoue, pas de limites cgroups au-delà de `--cpus`/`--memory` quand `resources.limits` est renseigné.
 >   Ça nécessite Docker installé sur le nœud ; sans `Container.image` (juste `Container.command`),
 >   l'agent retombe sur l'exécution directe en process OS hôte (`os/exec`, mode historique).
-> - Le mapping de port de `Container.container_ports` est un passthrough 1:1 (port hôte = port
->   conteneur) — pas de renumérotation dynamique façon vrai NodePort Kubernetes (plage 30000-32767).
->   Deux pods sur le même nœud déclarant le même port entreront en conflit ; c'est au namespace/nommage
->   de l'utilisateur d'éviter la collision pour l'instant.
-> - `Service` (style NodePort) n'a pas de ClusterIP virtuelle ni de proxy/round-robin : chaque appelant
->   reçoit la liste complète des endpoints réels (`node_ip:port` par pod) et doit choisir/répartir
->   lui-même. Pas d'équivalent kube-proxy — cohérent avec l'absence de réseau overlay (section 01 du
->   design doc, pas encore de CNI).
+> - `Container.container_ports` (le port que le process écoute dans le conteneur) reste publié par
+>   Docker en 1:1 sur `127.0.0.1` du nœud — deux pods du même nœud déclarant le même port entreront
+>   en conflit à ce niveau-là. Le port réellement exposé à l'extérieur (`Service.spec.node_port`) est,
+>   lui, bien auto-alloué et sans collision possible (voir plus haut) ; c'est lui qu'il faut utiliser
+>   pour joindre le pod depuis l'extérieur du nœud, pas `container_ports` directement.
+> - `Service` (style NodePort) n'a pas de ClusterIP virtuelle ni de répartition de charge : chaque
+>   appelant reçoit la liste complète des endpoints réels (`node_ip:node_port` par pod) et doit
+>   choisir/répartir lui-même s'il y a plusieurs pods. Le relais TCP par nœud (`internal/agent/nodeport.go`)
+>   ne fait tourner qu'un seul socket d'écoute par `node_port`, il ne fait pas de load-balancing entre
+>   plusieurs pods derrière le même service sur des nœuds différents — chaque nœud hébergeant un pod
+>   ouvre son propre `node_port` local, il n'y a pas de routage inter-nœuds comme le ferait un vrai
+>   `kube-proxy` en mode iptables/IPVS cluster-wide.
 > - Pas d'Ingress : il n'y a pas encore de composant reverse-proxy qui route par hostname/chemin vers
 >   les `Service`. Le point d'entrée aujourd'hui est directement `<node_ip>:<port>` via `Service`. Un
 >   `IngressController` (probablement un reverse-proxy Go natif lisant les objets `Ingress` et
