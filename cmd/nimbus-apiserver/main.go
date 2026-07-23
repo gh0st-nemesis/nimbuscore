@@ -170,6 +170,7 @@ func main() {
 
 	mgr := controller.NewManager()
 	mgr.Register(controller.NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 0))
+	mgr.Register(controller.NewPodReconciler(pods, nodes, scheduler.New(), 0))
 	mgr.Register(controller.NewNodeHealthReconciler(nodes, 0, 0))
 	mgr.Register(controller.NewHorizontalAutoscaler(deployments, pods, nodes, 0))
 	mgr.Register(controller.NewKeyRotationReconciler(raftStore, *secretKeyRotationInterval))
