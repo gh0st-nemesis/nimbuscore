@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -89,7 +90,7 @@ func main() {
 	}
 	defer otelProvider.Shutdown(context.Background())
 
-	svid, ca, dek, err := loadOrBootstrapIdentity(ctx, *bootstrap, *trustDomain, *nodeID, *joinAddr, *joinToken)
+	svid, ca, dek, err := loadOrBootstrapIdentity(ctx, *bootstrap, *trustDomain, *nodeID, *joinAddr, *joinToken, *dataDir)
 	if err != nil {
 		log.Fatalf("apiserver: %v", err)
 	}
@@ -187,7 +188,7 @@ func main() {
 	}
 }
 
-func loadOrBootstrapIdentity(ctx context.Context, bootstrap bool, trustDomain, nodeID, joinAddr, joinToken string) (*identity.SVID, *identity.CA, []byte, error) {
+func loadOrBootstrapIdentity(ctx context.Context, bootstrap bool, trustDomain, nodeID, joinAddr, joinToken, dataDir string) (*identity.SVID, *identity.CA, []byte, error) {
 	if !bootstrap {
 		svid, dek, err := identity.Enroll(ctx, identity.EnrollConfig{
 			ControlPlaneAddr: joinAddr,
@@ -198,9 +199,29 @@ func loadOrBootstrapIdentity(ctx context.Context, bootstrap bool, trustDomain, n
 		return svid, nil, dek, err
 	}
 
-	ca, err := identity.NewCA(trustDomain)
-	if err != nil {
-		return nil, nil, nil, err
+	statePath := identity.BootstrapStatePath(dataDir)
+	ca, dek, err := identity.LoadBootstrapState(statePath)
+	switch {
+	case err == nil:
+		log.Printf("apiserver: reusing persisted bootstrap identity from %s", statePath)
+	case os.IsNotExist(err):
+		ca, err = identity.NewCA(trustDomain)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		dek = make([]byte, store.EncryptionKeySize)
+		if _, err := rand.Read(dek); err != nil {
+			return nil, nil, nil, err
+		}
+		if err := os.MkdirAll(dataDir, 0o755); err != nil {
+			return nil, nil, nil, fmt.Errorf("apiserver: create data dir: %w", err)
+		}
+		if err := identity.SaveBootstrapState(statePath, ca, dek); err != nil {
+			return nil, nil, nil, fmt.Errorf("apiserver: persist bootstrap identity: %w", err)
+		}
+		log.Printf("apiserver: bootstrapped cluster, trust domain %q, join token %q", trustDomain, joinToken)
+	default:
+		return nil, nil, nil, fmt.Errorf("apiserver: load persisted bootstrap identity from %s: %w", statePath, err)
 	}
 
 	key, err := identity.GenerateKey()
@@ -216,12 +237,6 @@ func loadOrBootstrapIdentity(ctx context.Context, bootstrap bool, trustDomain, n
 		return nil, nil, nil, err
 	}
 
-	dek := make([]byte, store.EncryptionKeySize)
-	if _, err := rand.Read(dek); err != nil {
-		return nil, nil, nil, err
-	}
-
-	log.Printf("apiserver: bootstrapped cluster, trust domain %q, join token %q", trustDomain, joinToken)
 	return identity.NewSVID(key, cert, ca.TrustBundle()), ca, dek, nil
 }
 

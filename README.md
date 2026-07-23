@@ -185,15 +185,30 @@ sudo systemctl enable --now nimbus-agent
 journalctl -u nimbus-apiserver -f
 ```
 
-> **Limite connue** : les deux services tournent sous l'utilisateur système `nimbuscore` avec
+Un `.deb` pré-construit est aussi publié sur les
+[releases GitHub](https://github.com/gh0st-nemesis/nimbuscore/releases) — pas besoin de Go ni de
+`dpkg-deb` sur la machine cible dans ce cas :
+
+```bash
+curl -LO https://github.com/gh0st-nemesis/nimbuscore/releases/latest/download/nimbuscore_0.1.1_amd64.deb
+sudo dpkg -i nimbuscore_0.1.1_amd64.deb
+```
+
+`build-deb.sh` lui-même cross-compile (`GOOS=linux`) et assemble l'archive `ar`/`tar.gz` à la main —
+il tourne aussi bien depuis Windows/macOS que depuis Linux, sans dépendre de `dpkg-deb`.
+
+> **Limites connues** : les deux services tournent sous l'utilisateur système `nimbuscore` avec
 > `NoNewPrivileges=true` — cohérent avec le fait que l'agent exécute déjà les conteneurs comme de
 > simples processus OS (pas d'isolation cgroups/namespaces, cf. plus bas) : un `Container.command`
 > qui exigerait des privilèges élevés à l'intérieur du « conteneur » échouera sous ce service, tout
 > comme il échouerait déjà sans ce paquet. Le fichier `apiserver.env` par défaut bootstrap un cluster
 > mono-réplica avec vérification de signature d'image désactivée — à durcir avant tout usage au-delà
-> du test local (voir la section RBAC/signature plus bas). Le script `build-deb.sh` doit être exécuté
-> sur une machine Debian/Ubuntu (il appelle `dpkg-deb`) ; il compile les binaires à la volée, il n'y a
-> pas encore de release GitHub avec des `.deb` pré-construits.
+> du test local (voir la section RBAC/signature plus bas). L'identité de bootstrap (clé privée de la
+> CA + clé de chiffrement AES) est persistée dans `<data-dir>/bootstrap-identity.json` (`0600`,
+> lisible seulement par l'utilisateur `nimbuscore`) dès le premier démarrage, précisément pour qu'un
+> redémarrage du service (`systemctl restart`, reboot, crash) réutilise la même identité au lieu d'en
+> régénérer une nouvelle en mémoire — un ancien bug de cette implémentation faisait que chaque
+> redémarrage cassait le déchiffrement de tout ce qui avait été écrit par le process précédent.
 
 ### 1. Générer une clé de signature d'image et signer une image
 
