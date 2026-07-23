@@ -153,6 +153,16 @@ d'estimation de coût FinOps exposé via gRPC.
 
 Prérequis : Go 1.25+, `protoc` (uniquement pour régénérer le schéma).
 
+### 0. Installer les binaires (Linux/macOS)
+
+```bash
+./install.sh
+```
+
+Compile `nimbusctl`, `nimbus-apiserver` et `nimbus-agent`, puis les installe dans `/usr/local/bin`
+(`PREFIX=~/.local/bin ./install.sh` pour changer la destination). Sous Windows, utiliser `go build
+-o <nom>.exe ./cmd/<binaire>` directement.
+
 ### 1. Générer une clé de signature d'image et signer une image
 
 ```bash
