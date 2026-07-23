@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"flag"
 	"log"
@@ -22,6 +23,9 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/apiserver"
 	"github.com/gh0st-nemesis/nimbuscore/internal/controller"
 	"github.com/gh0st-nemesis/nimbuscore/internal/csi/hostpath"
+	"github.com/gh0st-nemesis/nimbuscore/internal/federation"
+	"github.com/gh0st-nemesis/nimbuscore/internal/finops"
+	"github.com/gh0st-nemesis/nimbuscore/internal/gitops"
 	"github.com/gh0st-nemesis/nimbuscore/internal/identity"
 	"github.com/gh0st-nemesis/nimbuscore/internal/imagesign"
 	"github.com/gh0st-nemesis/nimbuscore/internal/policy"
@@ -34,7 +38,7 @@ import (
 
 type allowAllVerifier struct{}
 
-func (allowAllVerifier) Verify(string) error { return nil }
+func (allowAllVerifier) Verify(context.Context, string) error { return nil }
 
 func main() {
 	fs := flag.NewFlagSet("nimbus-apiserver", flag.ExitOnError)
@@ -56,6 +60,13 @@ func main() {
 	otlpEndpoint := fs.String("otlp-endpoint", "127.0.0.1:4317", "OTLP gRPC collector endpoint (when -otel-exporter=otlp)")
 	csiHostpathDir := fs.String("csi-hostpath-dir", "./data/volumes", "directory backing the built-in hostpath CSI driver")
 	secretKeyRotationInterval := fs.Duration("secret-key-rotation-interval", 24*time.Hour, "how often the store's encryption key is rotated")
+	gitOpsRepoURL := fs.String("gitops-repo-url", "", "Git repository URL to sync Deployment manifests from (disabled if empty)")
+	gitOpsBranch := fs.String("gitops-branch", "main", "branch to sync when -gitops-repo-url is set")
+	gitOpsPath := fs.String("gitops-path", "", "subdirectory within the repo containing *.json Deployment manifests")
+	gitOpsWorkDir := fs.String("gitops-work-dir", "./data/gitops", "local working copy for the GitOps repository")
+	gitOpsSyncInterval := fs.Duration("gitops-sync-interval", 30*time.Second, "how often the GitOps repository is re-synced")
+	costCPUCoreHour := fs.Float64("cost-cpu-core-hour", finops.DefaultCostModel().CPUCoreHour, "estimated cost in $ per CPU core-hour, used by FinOpsService")
+	costMemoryGBHour := fs.Float64("cost-memory-gb-hour", finops.DefaultCostModel().MemoryGBHour, "estimated cost in $ per memory GB-hour, used by FinOpsService")
 	fs.Parse(os.Args[1:])
 
 	if *joinToken == "" {
@@ -125,7 +136,7 @@ func main() {
 	}
 	policies := registry.New(raftStore, "policies", func() *v1.Policy { return &v1.Policy{} })
 
-	imageVerifier := loadImageVerifier(*imageTrustFile, *imagePubKeyFile, *insecureSkipImageVerification)
+	imageVerifier, imageSigningPub := loadImageVerifier(*imageTrustFile, *imagePubKeyFile, *insecureSkipImageVerification)
 	admissionChain := admission.NewChain(
 		admission.NewSecurityContextPolicy(splitCSV(*allowedCapabilities)...),
 		admission.NewImageSignaturePolicy(imageVerifier),
@@ -146,6 +157,12 @@ func main() {
 	v1.RegisterNetworkPolicyServiceServer(srv.GRPCServer(), apiserver.NewNetworkPolicyService(raftStore))
 	v1.RegisterPolicyServiceServer(srv.GRPCServer(), apiserver.NewPolicyService(raftStore, policyEngine))
 	v1.RegisterSecretServiceServer(srv.GRPCServer(), apiserver.NewSecretService(raftStore))
+	v1.RegisterBackupServiceServer(srv.GRPCServer(), apiserver.NewBackupService(raftStore))
+	v1.RegisterFederationServiceServer(srv.GRPCServer(), apiserver.NewFederationService(federation.NewRegistry()))
+	v1.RegisterFinOpsServiceServer(srv.GRPCServer(), apiserver.NewFinOpsService(pods, finops.CostModel{CPUCoreHour: *costCPUCoreHour, MemoryGBHour: *costMemoryGBHour}))
+	if imageSigningPub != nil {
+		v1.RegisterImageRegistryServiceServer(srv.GRPCServer(), apiserver.NewImageRegistryService(raftStore, imageSigningPub))
+	}
 	if ca != nil {
 		v1.RegisterIdentityServiceServer(srv.GRPCServer(), apiserver.NewIdentityService(ca, *joinToken, identity.DefaultSVIDTTL, dek))
 	}
@@ -153,8 +170,16 @@ func main() {
 	mgr := controller.NewManager()
 	mgr.Register(controller.NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 0))
 	mgr.Register(controller.NewNodeHealthReconciler(nodes, 0, 0))
-	mgr.Register(controller.NewHorizontalAutoscaler(deployments, pods, 0))
+	mgr.Register(controller.NewHorizontalAutoscaler(deployments, pods, nodes, 0))
 	mgr.Register(controller.NewKeyRotationReconciler(raftStore, *secretKeyRotationInterval))
+	if *gitOpsRepoURL != "" {
+		mgr.Register(gitops.NewReconciler(gitops.Config{
+			RepoURL: *gitOpsRepoURL,
+			Branch:  *gitOpsBranch,
+			Path:    *gitOpsPath,
+			WorkDir: *gitOpsWorkDir,
+		}, deployments, *gitOpsSyncInterval))
+	}
 	go controller.RunWhileLeader(ctx, raftStore, mgr, 0)
 
 	if err := srv.Serve(ctx); err != nil {
@@ -220,10 +245,10 @@ func joinRaftCluster(ctx context.Context, svid *identity.SVID, expect spiffeid.M
 	return err
 }
 
-func loadImageVerifier(trustFile, pubKeyFile string, insecureSkip bool) admission.ImageVerifier {
+func loadImageVerifier(trustFile, pubKeyFile string, insecureSkip bool) (admission.ImageVerifier, *ecdsa.PublicKey) {
 	if insecureSkip {
 		log.Printf("apiserver: WARNING image signature verification is DISABLED (-insecure-skip-image-verification) — do not run this in production")
-		return allowAllVerifier{}
+		return allowAllVerifier{}, nil
 	}
 	if pubKeyFile == "" || trustFile == "" {
 		log.Fatal("apiserver: -image-signing-pubkey and -image-trust-file are required unless -insecure-skip-image-verification is set")
@@ -242,7 +267,7 @@ func loadImageVerifier(trustFile, pubKeyFile string, insecureSkip bool) admissio
 	if err != nil {
 		log.Fatalf("apiserver: load image trust file: %v", err)
 	}
-	return imagesign.NewKeyVerifier(pub, tf)
+	return imagesign.NewKeyVerifier(pub, tf), pub
 }
 
 func splitCSV(s string) []string {

@@ -14,14 +14,15 @@ import (
 type HorizontalAutoscaler struct {
 	deployments *registry.Registry[*v1.Deployment]
 	pods        *registry.Registry[*v1.Pod]
+	nodes       *registry.Registry[*v1.Node]
 	resync      time.Duration
 }
 
-func NewHorizontalAutoscaler(deployments *registry.Registry[*v1.Deployment], pods *registry.Registry[*v1.Pod], resync time.Duration) *HorizontalAutoscaler {
+func NewHorizontalAutoscaler(deployments *registry.Registry[*v1.Deployment], pods *registry.Registry[*v1.Pod], nodes *registry.Registry[*v1.Node], resync time.Duration) *HorizontalAutoscaler {
 	if resync <= 0 {
 		resync = 15 * time.Second
 	}
-	return &HorizontalAutoscaler{deployments: deployments, pods: pods, resync: resync}
+	return &HorizontalAutoscaler{deployments: deployments, pods: pods, nodes: nodes, resync: resync}
 }
 
 func (r *HorizontalAutoscaler) Name() string { return "horizontal-autoscaler" }
@@ -106,6 +107,19 @@ func (r *HorizontalAutoscaler) reconcileOne(ctx context.Context, d *v1.Deploymen
 	if desired > maxReplicas {
 		desired = maxReplicas
 	}
+
+	if desired > currentReplicas {
+		capped, shortfall, err := r.capToClusterCapacity(ctx, d, currentReplicas, desired)
+		if err != nil {
+			return fmt.Errorf("check cluster capacity: %w", err)
+		}
+		if shortfall > 0 {
+			log.Printf("horizontal-autoscaler: %s/%s: wanted %d replicas but cluster capacity only fits %d (shortfall %d)",
+				d.GetMetadata().GetNamespace(), d.GetMetadata().GetName(), desired, capped, shortfall)
+		}
+		desired = capped
+	}
+
 	if desired == d.GetSpec().GetReplicas() {
 		return nil
 	}
@@ -119,4 +133,38 @@ func (r *HorizontalAutoscaler) reconcileOne(ctx context.Context, d *v1.Deploymen
 	}
 	current.Spec.Replicas = desired
 	return r.deployments.Put(ctx, current.GetMetadata().GetNamespace(), current.GetMetadata().GetName(), current)
+}
+
+func (r *HorizontalAutoscaler) capToClusterCapacity(ctx context.Context, d *v1.Deployment, currentReplicas, desired int32) (capped int32, shortfall int32, err error) {
+	usage, err := computeNodeUsage(ctx, r.pods)
+	if err != nil {
+		return desired, 0, err
+	}
+	capacity, err := computeClusterCapacity(ctx, r.nodes, usage)
+	if err != nil {
+		return desired, 0, err
+	}
+
+	var perReplicaCPU, perReplicaMem int64
+	perReplicaAccel := make(map[string]int64)
+	for _, c := range d.GetSpec().GetTemplate().GetContainers() {
+		req := c.GetResources().GetRequests()
+		perReplicaCPU += req.GetCpuMillis()
+		perReplicaMem += req.GetMemoryBytes()
+		for name, count := range req.GetAccelerators() {
+			perReplicaAccel[name] += count
+		}
+	}
+
+	maxAdditional := capacity.maxAdditionalReplicas(perReplicaCPU, perReplicaMem, perReplicaAccel)
+	wantAdditional := desired - currentReplicas
+	if wantAdditional <= maxAdditional {
+		return desired, 0, nil
+	}
+
+	capped = currentReplicas + maxAdditional
+	if capped < currentReplicas {
+		capped = currentReplicas
+	}
+	return capped, desired - capped, nil
 }

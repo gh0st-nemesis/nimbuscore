@@ -11,7 +11,7 @@
 
 <p align="center">
   <img alt="Go" src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white">
-  <img alt="Status" src="https://img.shields.io/badge/status-Phase%206-orange">
+  <img alt="Status" src="https://img.shields.io/badge/status-Phase%209-brightgreen">
   <img alt="License" src="https://img.shields.io/badge/license-unset-lightgrey">
 </p>
 
@@ -25,14 +25,19 @@ et overhead d'un control plane généraliste. Le design complet (architecture, s
 phases, stack technique) est dans
 [`NimbusCore-document-de-conception.pdf`](./NimbusCore-document-de-conception.pdf).
 
-Ce dépôt contient le code : **Phases 1 à 6** de la roadmap (section 08) sont implémentées — un cluster
+Ce dépôt contient le code : **les 9 phases** de la roadmap (section 08) sont implémentées — un cluster
 réel, multi-processus, avec consensus Raft, identités mTLS, admission control non contournable, RBAC
 deny-by-default, chiffrement au repos, stockage persistant via CSI, politiques réseau deny-by-default,
 télémétrie OpenTelemetry native, un agent qui exécute réellement des processus (redémarre ceux qui
-crashent, évince/remplace ceux en échec terminal), un autoscaler horizontal sur mémoire observée, et —
-nouveau en Phase 6 — un moteur de policy natif en CEL (mêmes primitives que l'admission control, sans
-langage séparé façon Rego) et un coffre-fort de secrets dont la clé de chiffrement se fait tourner
-automatiquement, sans jamais interrompre l'accès aux données.
+crashent, évince/remplace ceux en échec terminal), un autoscaler horizontal sur mémoire observée, un
+moteur de policy natif en CEL, un coffre-fort de secrets à rotation de clé automatique, une couche de
+résilience réseau client (retries + circuit breaker, « mesh sans sidecar »), un reconciler GitOps réel
+(sync depuis un dépôt Git), un registre d'images natif, un runtime WebAssembly embarqué (sans conteneur
+OCI), un ordonnancement conscient des accélérateurs (GPU/TPU en ressource nommée), une fédération
+multi-cluster (fan-out gRPC tolérant aux pannes partielles), une sauvegarde/restauration de cluster, et
+— nouveau en Phase 9 — un autoscaler horizontal désormais **conscient de la capacité du cluster**
+(il ne monte plus en réplicas au-delà de ce que les nœuds peuvent réellement accueillir) et un moteur
+d'estimation de coût FinOps exposé via gRPC.
 
 ## Architecture
 
@@ -48,26 +53,37 @@ automatiquement, sans jamais interrompre l'accès aux données.
    │  ├─ VolumeService ──► driver CSI hostpath (Controller/Node/Identity)│
    │  ├─ NetworkPolicyService ──► internal/netpolicy (moteur de policy) │
    │  ├─ PolicyService / SecretService (coffre-fort chiffré au repos)   │
+   │  ├─ ImageRegistryService (registre d'images natif, signatures)     │
+   │  ├─ FederationService ──► internal/federation (fan-out multi-cluster)│
+   │  ├─ BackupService (snapshot/restore de tout le Store)              │
+   │  └─ FinOpsService ──► internal/finops (estimation de coût)         │
    │                                                                    │
    │  Controller Manager (actif sur le leader Raft uniquement)         │
    │  ├─ DeploymentReconciler   (désiré vs. observé + scheduler +       │
-   │  │    éviction nœud mort/pod en échec terminal)                   │
+   │  │    éviction nœud mort/pod en échec terminal, accélérateurs)    │
    │  ├─ NodeHealthReconciler   (heartbeat expiré → not-ready)          │
-   │  ├─ HorizontalAutoscaler   (replicas ajustés sur mémoire observée) │
-   │  └─ KeyRotationReconciler  (fait tourner la clé AES-256-GCM,       │
-   │       re-chiffre tout, sans interruption de service)              │
+   │  ├─ HorizontalAutoscaler   (mémoire observée, plafonné par la      │
+   │  │    capacité cluster réellement disponible — Phase 9)           │
+   │  ├─ KeyRotationReconciler  (fait tourner la clé AES-256-GCM,       │
+   │  │    re-chiffre tout, sans interruption de service)              │
+   │  └─ gitops.Reconciler      (sync périodique depuis un dépôt Git,   │
+   │       applique les Deployment manifests trouvés — Phase 7)        │
    │              │                                                    │
    │              └──────────► RaftStore (BoltDB, chiffré AES-256-GCM) │
    └────────────────────────────────────────────────────────────────────┘
               ▲ Raft (réplication)          ▲ gRPC mTLS (enrôlement, heartbeat,
-              │                             │  UpdatePodStatus)
+              │  interceptor mesh (retry +  │  UpdatePodStatus)
+              │  circuit breaker, client)   │
      autre réplica control-plane       Nœud (cmd/nimbus-agent)
-                                       enrôle → SVID, s'enregistre comme Node,
-                                       heartbeat périodique, boucle de
-                                       supervision : exécute chaque conteneur
-                                       comme process OS réel, détecte les
-                                       sorties, redémarre selon RestartPolicy,
-                                       rapporte phase + mémoire réelle (RSS)
+     ▲                                 enrôle → SVID, s'enregistre comme Node,
+     │ gRPC mTLS (identité SPIFFE          heartbeat périodique, boucle de
+     │ réutilisée pour l'auth              supervision : exécute chaque
+     │ inter-cluster)                      conteneur comme process OS réel
+     │                                     (ou module WASM via wazero si
+  autre cluster NimbusCore                 `wasm_module_path` est renseigné),
+  (fédéré via FederationService)           détecte les sorties, redémarre
+                                            selon RestartPolicy, rapporte
+                                            phase + mémoire réelle (RSS)
 ```
 
 - **`internal/store`** — `Store` (Get/Put/Delete/List). `RaftStore` répliqué, chiffré au repos, avec
@@ -96,19 +112,44 @@ automatiquement, sans jamais interrompre l'accès aux données.
 - **`internal/registry`** — accès typé et générique au-dessus du `Store`.
 - **`internal/apiserver`** — serveur gRPC, `AuthInterceptor`, tous les services de ressources.
 - **`internal/controller`** — `Manager`/`Reconciler`, réconciliateurs (`DeploymentReconciler`,
-  `NodeHealthReconciler`, `HorizontalAutoscaler`), `RunWhileLeader`. Le `DeploymentReconciler`
-  planifie sur des métriques d'usage réelles (somme des requêtes CPU/mémoire déjà attribuées par
-  nœud, pas des valeurs figées) et remplace tout pod en phase terminale (`Succeeded`/`Failed`), en plus
-  d'évincer ceux d'un nœud mort.
-- **`internal/scheduler`** — `Scheduler` filter-then-score.
+  `NodeHealthReconciler`, `HorizontalAutoscaler`, `KeyRotationReconciler`), `RunWhileLeader`. Le
+  `DeploymentReconciler` planifie sur des métriques d'usage réelles (somme des requêtes CPU/mémoire/
+  accélérateurs déjà attribuées par nœud, pas des valeurs figées) et remplace tout pod en phase
+  terminale (`Succeeded`/`Failed`), en plus d'évincer ceux d'un nœud mort. Depuis la Phase 9,
+  `HorizontalAutoscaler` calcule la capacité cluster restante (`capacity.go`) avant toute décision de
+  scale-up et plafonne le nombre de réplicas ajoutées à ce que les nœuds prêts peuvent réellement
+  accueillir (CPU, mémoire, accélérateurs), en journalisant le manque à combler plutôt que d'échouer
+  silencieusement.
+- **`internal/scheduler`** — `Scheduler` filter-then-score, avec filtrage sur ressources nommées
+  (`accelerators`, ex. `nvidia.com/gpu`) en plus de CPU/mémoire — mêmes primitives que les « extended
+  resources » de Kubernetes.
 - **`internal/agent`** — agent de nœud : boucle de réconciliation réelle (liste les pods qui lui sont
   assignés, démarre/arrête de vrais processus OS via `os/exec`, détecte les sorties, redémarre selon
   `RestartPolicy`, échantillonne la mémoire résidente réelle via `gopsutil`, rapporte tout via
-  `PodService.UpdatePodStatus`). Ce n'est pas encore un vrai runtime OCI/CRI (pas d'image, pas
-  d'isolation cgroups/namespaces) — `Container.command` exécute directement un binaire côté hôte ;
-  voir les limites connues plus bas.
-- **`api/v1`** — schéma Protobuf (`Pod`, `Node`, `Deployment`, `Volume`, `NetworkPolicy`, services
-  d'identité/admin) et code généré.
+  `PodService.UpdatePodStatus`). Si `Container.wasm_module_path` est renseigné, le conteneur est
+  exécuté comme module WebAssembly via `internal/wasmrt` (wazero, WASI, zéro cgo) plutôt que comme
+  process natif — utile pour des charges légères de type edge sans binaire natif par plateforme. Ce
+  n'est pas encore un vrai runtime OCI/CRI (pas d'image, pas d'isolation cgroups/namespaces) —
+  `Container.command` exécute directement un binaire côté hôte ; voir les limites connues plus bas.
+- **`internal/mesh`** — `CircuitBreaker` (Closed/Open/HalfOpen) et `RetryPolicy` (backoff exponentiel),
+  assemblés en un `grpc.UnaryClientInterceptor` réutilisable. « Mesh sans sidecar » : la résilience
+  réseau (retries, coupe-circuit) vit dans le processus client, pas dans un proxy injecté à côté.
+- **`internal/gitops`** — `Reconciler` qui clone/pull un dépôt Git réel (`go-git`, pur Go, aucun binaire
+  `git` requis) à intervalle régulier, décode chaque manifeste `*.json` en `Deployment`
+  (`protojson.Unmarshal`) et l'applique dans le registre — le dépôt Git devient la source de vérité.
+- **`internal/imageregistry`** — registre d'images natif au cluster (`ImageRecord`/
+  `ImageRegistryService`) ; son `Verifier` implémente `admission.ImageVerifier` en vérifiant la
+  présence de l'image dans ce registre plutôt qu'en re-validant la signature cryptographique
+  (`imagesign` s'en charge déjà à la signature/au push).
+- **`internal/federation`** — `Registry` qui fait du fan-out gRPC concurrent vers des clusters distants
+  enregistrés (`ListPodsAll`), tolère les pannes partielles (un cluster down ne bloque pas les autres),
+  réutilise l'enrôlement SPIFFE existant pour l'authentification inter-cluster.
+- **`internal/finops`** — `Estimate(pods, model, labelKey, now)` : coût déterministe ($/cœur-heure,
+  $/Go-heure, $/accélérateur-heure) appliqué aux requêtes de ressources de chaque pod × temps
+  d'exécution écoulé (`ObjectMeta.created_at_unix`), groupé par namespace et par une clé de label
+  arbitraire. Exposé via `FinOpsService.GetCostReport`.
+- **`api/v1`** — schéma Protobuf (`Pod`, `Node`, `Deployment`, `Volume`, `NetworkPolicy`, `ImageRecord`,
+  `RemoteCluster`, `BackupData`, `CostReport`, services d'identité/admin) et code généré.
 
 ## Démarrer
 
@@ -176,6 +217,46 @@ Les `Secret` sont chiffrés au repos comme toute autre ressource (Phase 3). `-se
 valeur stockée, puis abandonne l'ancienne clé — testé avec un intervalle de quelques secondes : le
 secret reste lisible et intact à travers plusieurs rotations consécutives.
 
+### Mesh, GitOps et registre d'images (Phase 7)
+
+Le control plane peut se synchroniser depuis un dépôt Git contenant des manifestes `Deployment` en
+JSON (`protojson`) :
+
+```bash
+go run ./cmd/nimbus-apiserver ... \
+  -gitops-repo-url=file:///C:/path/vers/mon-repo.git -gitops-branch=main \
+  -gitops-path=deployments -gitops-sync-interval=30s
+```
+
+Tout appel client (ex. enrôlement inter-cluster, section suivante) peut être enveloppé par
+`mesh.NewClientInterceptor(mesh.DefaultRetryPolicy(), breaker)` pour obtenir retries + circuit breaker
+sans proxy sidecar. `ImageRegistryService` (`PushImage`/`GetImage`/`ListImages`/`DeleteImage`) n'est
+actif que si `-image-signing-pubkey` est renseigné.
+
+### Multi-cluster, edge et charges avancées (Phase 8)
+
+Un cluster peut fédérer un autre cluster NimbusCore via `FederationService.RegisterCluster` (ré-utilise
+l'enrôlement SPIFFE pour l'auth) puis interroger tous les clusters fédérés d'un coup avec
+`ListFederatedPods` — les résultats partiels sont retournés même si un cluster est injoignable. Un
+`Container.wasm_module_path` fait exécuter ce conteneur comme module WebAssembly (wazero/WASI) plutôt
+que comme process natif — pratique pour des charges edge sans binaire par plateforme. Un
+`ResourceList.accelerators` (ex. `{"nvidia.com/gpu": 1}`) sur les requêtes/limites d'un conteneur est
+pris en compte par le scheduler et par le calcul d'usage par nœud, exactement comme CPU/mémoire.
+`BackupService.CreateBackup`/`RestoreBackup` sauvegardent/restaurent tout le contenu du `Store`.
+
+### Autoscaling unifié et FinOps (Phase 9)
+
+`HorizontalAutoscaler` ne se contente plus de viser un pourcentage d'utilisation mémoire : avant
+d'écrire le nombre de réplicas désiré, il additionne la capacité allouable de tous les nœuds `Ready`
+du cluster, soustrait ce qui est déjà consommé, et plafonne la montée en charge à ce qui tient
+réellement — CPU, mémoire et accélérateurs confondus. Le manque à combler éventuel est journalisé
+(`wanted N replicas but cluster capacity only fits M`).
+
+`FinOpsService.GetCostReport(namespace, label_key)` retourne un coût total ainsi qu'une ventilation par
+namespace et par valeur d'un label arbitraire (ex. `team`), à partir d'un modèle de coût configurable
+au démarrage (`-cost-cpu-core-hour`, `-cost-memory-gb-hour`, défauts $0.03/cœur-heure et
+$0.004/Go-heure) appliqué au temps d'exécution réel de chaque pod.
+
 ### Benchmarks
 
 Des benchmarks Go mesurent les opérations internes du control plane (boucle de réconciliation,
@@ -196,7 +277,7 @@ Trois rôles SVID, choisis à l'enrôlement (`SVIDRole`) :
 | Rôle | Chemin SPIFFE | Permissions |
 |---|---|---|
 | `NODE` | `/node/<name>` | `nodes:create,update` uniquement (auto-enregistrement + heartbeat) |
-| `CLIENT` | `/client/<name>` | `pods:*`, `deployments:*`, `volumes:*`, `networkpolicies:*`, `policies:*`, `secrets:*`, `nodes:get,list` |
+| `CLIENT` | `/client/<name>` | `pods:*`, `deployments:*`, `volumes:*`, `networkpolicies:*`, `policies:*`, `secrets:*`, `images:*`, `backup:*`, `federation:*`, `finops:*`, `nodes:get,list` |
 | `CONTROL_PLANE` | `/control-plane/<id>` | `*:*` — réplicas du control plane uniquement |
 
 Tout appel dont la méthode n'a pas de mapping RBAC explicite, ou dont l'identité n'a pas de binding
@@ -243,6 +324,45 @@ correspondant, est **refusé par défaut**.
 > - Le moteur de policy CEL évalue namespace/labels/conteneurs du pod admis ; il n'a pas encore accès
 >   aux autres ressources du cluster (quotas déjà consommés, autres pods du namespace...) — les
 >   politiques inter-ressources restent du ressort de `QuotaPolicy` pour l'instant.
+> - `internal/mesh` est une bibliothèque cliente (interceptor gRPC), pas un service mesh à sidecar :
+>   pas de proxy injecté, pas de mTLS transparent au niveau du réseau au-delà de ce que fournit déjà
+>   `internal/identity`, pas de tableau de bord de trafic. C'est délibérément le modèle « logique dans
+>   le process » plutôt que « logique dans un sidecar ».
+> - `internal/gitops` applique des manifestes `Deployment` en JSON via `protojson` — pas de support
+>   YAML, pas de Kustomize/Helm, pas de détection de dérive (drift) autre que le prochain sync
+>   périodique, pas d'authentification Git au-delà de ce que l'URL du dépôt encode déjà (ex. un jeton
+>   dans une URL HTTPS) — pas de gestion dédiée des clés SSH.
+> - `internal/imageregistry`/`ImageRegistryService` est un registre natif au cluster (métadonnées +
+>   signature), pas un vrai registre OCI Distribution Spec — il ne stocke pas les blobs/couches
+>   d'image, seulement une référence et sa signature. Implémenter l'API Distribution complète était
+>   disproportionné par rapport à ce que l'admission control exige réellement (savoir qu'une image est
+>   connue et signée).
+> - Le runtime WASM (`internal/wasmrt`) exécute de vrais modules `.wasm` avec support WASI, mais les
+>   modules utilisés dans les tests sont du bytecode WASM écrit à la main (aucune chaîne d'outils
+>   `wat2wasm`/TinyGo n'est disponible hors-ligne dans cet environnement) — le runtime lui-même n'est
+>   pas simulé, seule la façon dont les modules de test ont été produits est artisanale.
+> - L'ordonnancement conscient des accélérateurs (`ResourceList.accelerators`) suit le même modèle que
+>   les « extended resources » de Kubernetes : une carte nom→quantité comptée par le scheduler et le
+>   calcul d'usage par nœud. Il n'y a pas de découverte matérielle réelle (pas d'équivalent
+>   device-plugin NVIDIA) — la capacité d'un nœud en accélérateurs est déclarée manuellement dans son
+>   `NodeStatus.Allocatable`, pas détectée.
+> - La fédération multi-cluster (`internal/federation`) fait du fan-out en lecture
+>   (`ListFederatedPods`) et de l'enregistrement de clusters distants ; il n'y a pas encore de
+>   routage intelligent par zone/latence, ni de réplication d'écriture cross-cluster — chaque cluster
+>   fédéré reste souverain sur ses propres ressources.
+> - `BackupService` produit un instantané complet du `Store` (toutes les clés, à un instant donné) et
+>   le restaure tel quel ; pas de sauvegarde incrémentale, pas de streaming pour de très gros clusters,
+>   pas de chiffrement additionnel du dump au-delà du chiffrement au repos déjà appliqué aux valeurs
+>   individuelles.
+> - Le plafonnement de capacité de l'`HorizontalAutoscaler` (Phase 9) ne compte que l'usage des pods
+>   déjà assignés à un nœud (`Spec.node_name` renseigné) — un pic soudain de pods en attente
+>   d'ordonnancement n'est pas anticipé tant qu'ils ne sont pas passés par le scheduler au moins une
+>   fois. Il ne provisionne pas non plus de nouveaux nœuds (pas de cluster-autoscaler façon cloud) :
+>   il se contente de ne pas promettre plus de réplicas que les nœuds existants ne peuvent accueillir.
+> - `internal/finops` est un modèle de coût déterministe et volontairement simple ($/ressource/heure
+>   constant, pas de tarification spot/réservée, pas d'ingestion de factures cloud réelles) — un ordre
+>   de grandeur utile pour comparer des namespaces/équipes entre eux, pas un remplacement d'un outil de
+>   facturation cloud.
 
 Lancer les tests (Raft mono-nœud réel, chiffrement au repos vérifié sur le fichier BoltDB, rotation de
 clé vérifiée sur le ciphertext brut, handshake mTLS réel, admission control + RBAC + policies CEL
@@ -279,6 +399,8 @@ protoc \
 | `go.opentelemetry.io/otel`, `.../contrib/.../otelgrpc` | Traces et métriques natives, sans agent tiers |
 | `google/cel-go` | Moteur de policy natif (CEL — même langage que Kubernetes `ValidatingAdmissionPolicy`) |
 | `shirou/gopsutil` | Mémoire résidente réelle des processus supervisés par l'agent |
+| `go-git/v5` | Reconciler GitOps — clone/pull de dépôts Git réels, pur Go (pas de binaire `git`) |
+| `tetratelabs/wazero` | Runtime WebAssembly embarqué (WASI), zéro cgo — exécution de conteneurs edge |
 | `containerd/containerd` | Client CRI, exécution des conteneurs (agent — travail futur) |
 | `cilium/ebpf`, `microsoft/ebpf-for-windows` | Dataplane réseau eBPF (à câbler une fois le CRI en place) |
 
@@ -305,4 +427,14 @@ composant correspondant n'est pas réellement câblé — voir
 - [x] **Phase 6 — Gouvernance et observabilité natives** : moteur de policy interne en CEL (mêmes
       primitives que l'admission control), coffre-fort de secrets chiffré au repos avec rotation de
       clé automatique et sans interruption (télémétrie native déjà couverte en Phase 4).
-- [ ] Phases 7-9 : mesh/GitOps natifs, multi-cluster/edge/WASM/GPU, FinOps — voir le design doc.
+- [x] **Phase 7 — Mesh et GitOps natifs** : résilience réseau côté client (retries + circuit breaker,
+      « mesh sans sidecar »), reconciler GitOps réel synchronisant des `Deployment` depuis un dépôt Git
+      (`go-git`), registre d'images natif au cluster (`ImageRegistryService`).
+- [x] **Phase 8 — Multi-cluster, edge et charges avancées** : fédération multi-cluster tolérante aux
+      pannes partielles (`FederationService`, fan-out gRPC), runtime WebAssembly embarqué pour les
+      charges edge (`wazero`), ordonnancement conscient des accélérateurs (GPU/TPU en ressource
+      nommée), sauvegarde/restauration complète du cluster (`BackupService`).
+- [x] **Phase 9 — Autoscaling unifié et FinOps** : `HorizontalAutoscaler` désormais plafonné par la
+      capacité cluster réellement disponible (CPU/mémoire/accélérateurs, pas seulement le taux
+      d'utilisation mémoire), moteur d'estimation de coût FinOps exposé via `FinOpsService`
+      (ventilation par namespace et par label).

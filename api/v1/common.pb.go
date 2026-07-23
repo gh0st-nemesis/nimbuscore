@@ -109,6 +109,7 @@ type ResourceList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CpuMillis     int64                  `protobuf:"varint,1,opt,name=cpu_millis,json=cpuMillis,proto3" json:"cpu_millis,omitempty"`
 	MemoryBytes   int64                  `protobuf:"varint,2,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
+	Accelerators  map[string]int64       `protobuf:"bytes,3,rep,name=accelerators,proto3" json:"accelerators,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -155,6 +156,13 @@ func (x *ResourceList) GetMemoryBytes() int64 {
 		return x.MemoryBytes
 	}
 	return 0
+}
+
+func (x *ResourceList) GetAccelerators() map[string]int64 {
+	if x != nil {
+		return x.Accelerators
+	}
+	return nil
 }
 
 type ResourceRequirements struct {
@@ -300,11 +308,15 @@ const file_common_proto_rawDesc = "" +
 	"\x0fcreated_at_unix\x18\x06 \x01(\x03R\rcreatedAtUnix\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"P\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe4\x01\n" +
 	"\fResourceList\x12\x1d\n" +
 	"\n" +
 	"cpu_millis\x18\x01 \x01(\x03R\tcpuMillis\x12!\n" +
-	"\fmemory_bytes\x18\x02 \x01(\x03R\vmemoryBytes\"\x84\x01\n" +
+	"\fmemory_bytes\x18\x02 \x01(\x03R\vmemoryBytes\x12Q\n" +
+	"\faccelerators\x18\x03 \x03(\v2-.nimbuscore.v1.ResourceList.AcceleratorsEntryR\faccelerators\x1a?\n" +
+	"\x11AcceleratorsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\x84\x01\n" +
 	"\x14ResourceRequirements\x127\n" +
 	"\brequests\x18\x01 \x01(\v2\x1b.nimbuscore.v1.ResourceListR\brequests\x123\n" +
 	"\x06limits\x18\x02 \x01(\v2\x1b.nimbuscore.v1.ResourceListR\x06limits\"\x9b\x01\n" +
@@ -327,23 +339,25 @@ func file_common_proto_rawDescGZIP() []byte {
 	return file_common_proto_rawDescData
 }
 
-var file_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_common_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_common_proto_goTypes = []any{
 	(*ObjectMeta)(nil),           // 0: nimbuscore.v1.ObjectMeta
 	(*ResourceList)(nil),         // 1: nimbuscore.v1.ResourceList
 	(*ResourceRequirements)(nil), // 2: nimbuscore.v1.ResourceRequirements
 	(*Condition)(nil),            // 3: nimbuscore.v1.Condition
 	nil,                          // 4: nimbuscore.v1.ObjectMeta.LabelsEntry
+	nil,                          // 5: nimbuscore.v1.ResourceList.AcceleratorsEntry
 }
 var file_common_proto_depIdxs = []int32{
 	4, // 0: nimbuscore.v1.ObjectMeta.labels:type_name -> nimbuscore.v1.ObjectMeta.LabelsEntry
-	1, // 1: nimbuscore.v1.ResourceRequirements.requests:type_name -> nimbuscore.v1.ResourceList
-	1, // 2: nimbuscore.v1.ResourceRequirements.limits:type_name -> nimbuscore.v1.ResourceList
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	5, // 1: nimbuscore.v1.ResourceList.accelerators:type_name -> nimbuscore.v1.ResourceList.AcceleratorsEntry
+	1, // 2: nimbuscore.v1.ResourceRequirements.requests:type_name -> nimbuscore.v1.ResourceList
+	1, // 3: nimbuscore.v1.ResourceRequirements.limits:type_name -> nimbuscore.v1.ResourceList
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_common_proto_init() }
@@ -357,7 +371,7 @@ func file_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_proto_rawDesc), len(file_common_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

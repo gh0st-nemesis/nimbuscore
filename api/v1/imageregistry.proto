@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+message ImageRecord {
+  string reference = 1;
+  bytes signature = 2;
+  int64 pushed_at_unix = 3;
+}
+
+service ImageRegistryService {
+  rpc PushImage(PushImageRequest) returns (ImageRecord);
+  rpc GetImage(GetImageRequest) returns (ImageRecord);
+  rpc ListImages(ListImagesRequest) returns (ListImagesResponse);
+  rpc DeleteImage(DeleteImageRequest) returns (DeleteImageResponse);
+}
+
+message PushImageRequest {
+  string reference = 1;
+  bytes signature = 2;
+}
+
+message GetImageRequest {
+  string reference = 1;
+}
+
+message ListImagesRequest {}
+
+message ListImagesResponse {
+  repeated ImageRecord items = 1;
+}
+
+message DeleteImageRequest {
+  string reference = 1;
+}
+
+message DeleteImageResponse {}

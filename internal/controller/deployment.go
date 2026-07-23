@@ -174,12 +174,17 @@ func (r *DeploymentReconciler) nodeReady(ctx context.Context, name string) (bool
 }
 
 type nodeResourceUsage struct {
-	cpuMillis   int64
-	memoryBytes int64
+	cpuMillis    int64
+	memoryBytes  int64
+	accelerators map[string]int64
 }
 
 func (r *DeploymentReconciler) nodeUsage(ctx context.Context) (map[string]nodeResourceUsage, error) {
-	all, err := r.pods.List(ctx, "")
+	return computeNodeUsage(ctx, r.pods)
+}
+
+func computeNodeUsage(ctx context.Context, pods *registry.Registry[*v1.Pod]) (map[string]nodeResourceUsage, error) {
+	all, err := pods.List(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -191,9 +196,15 @@ func (r *DeploymentReconciler) nodeUsage(ctx context.Context) (map[string]nodeRe
 			continue
 		}
 		u := usage[nodeName]
+		if u.accelerators == nil {
+			u.accelerators = make(map[string]int64)
+		}
 		for _, c := range p.GetSpec().GetContainers() {
 			u.cpuMillis += c.GetResources().GetRequests().GetCpuMillis()
 			u.memoryBytes += c.GetResources().GetRequests().GetMemoryBytes()
+			for name, count := range c.GetResources().GetRequests().GetAccelerators() {
+				u.accelerators[name] += count
+			}
 		}
 		usage[nodeName] = u
 	}
@@ -228,25 +239,32 @@ func (r *DeploymentReconciler) scheduleUnassigned(ctx context.Context, pods []*v
 		}
 		name := n.GetMetadata().GetName()
 		candidates = append(candidates, scheduler.NodeCandidate{
-			Name:        name,
-			CPUCapacity: n.GetStatus().GetAllocatable().GetCpuMillis(),
-			MemCapacity: n.GetStatus().GetAllocatable().GetMemoryBytes(),
-			CPUUsed:     usage[name].cpuMillis,
-			MemUsed:     usage[name].memoryBytes,
+			Name:                name,
+			CPUCapacity:         n.GetStatus().GetAllocatable().GetCpuMillis(),
+			MemCapacity:         n.GetStatus().GetAllocatable().GetMemoryBytes(),
+			CPUUsed:             usage[name].cpuMillis,
+			MemUsed:             usage[name].memoryBytes,
+			AcceleratorCapacity: n.GetStatus().GetAllocatable().GetAccelerators(),
+			AcceleratorUsed:     usage[name].accelerators,
 		})
 	}
 
 	for _, p := range unassigned {
 		var cpuReq, memReq int64
+		accelReq := make(map[string]int64)
 		for _, c := range p.GetSpec().GetContainers() {
 			cpuReq += c.GetResources().GetRequests().GetCpuMillis()
 			memReq += c.GetResources().GetRequests().GetMemoryBytes()
+			for name, count := range c.GetResources().GetRequests().GetAccelerators() {
+				accelReq[name] += count
+			}
 		}
 
 		nodeName, err := r.scheduler.Schedule(ctx, scheduler.PodRequest{
-			Name:       p.GetMetadata().GetName(),
-			CPURequest: cpuReq,
-			MemRequest: memReq,
+			Name:                  p.GetMetadata().GetName(),
+			CPURequest:            cpuReq,
+			MemRequest:            memReq,
+			AcceleratorsRequested: accelReq,
 		}, candidates)
 		if err != nil {
 			continue

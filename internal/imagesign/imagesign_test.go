@@ -1,6 +1,7 @@
 package imagesign
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 )
@@ -105,10 +106,10 @@ func TestKeyVerifierRejectsUnsignedImage(t *testing.T) {
 
 	v := NewKeyVerifier(&key.PublicKey, tf)
 
-	if err := v.Verify("registry.example/signed:v1"); err != nil {
+	if err := v.Verify(context.Background(), "registry.example/signed:v1"); err != nil {
 		t.Errorf("Verify(signed) = %v, want nil", err)
 	}
-	if err := v.Verify("registry.example/unsigned:v1"); err == nil {
+	if err := v.Verify(context.Background(), "registry.example/unsigned:v1"); err == nil {
 		t.Error("Verify(unsigned) succeeded, want error")
 	}
 }
@@ -136,7 +137,7 @@ func TestTrustFileSaveLoadRoundTrip(t *testing.T) {
 		t.Fatalf("LoadTrustFile: %v", err)
 	}
 	v := NewKeyVerifier(&key.PublicKey, loaded)
-	if err := v.Verify("registry.example/app:v1"); err != nil {
+	if err := v.Verify(context.Background(), "registry.example/app:v1"); err != nil {
 		t.Errorf("Verify after reload = %v, want nil", err)
 	}
 }

@@ -21,6 +21,7 @@ message Container {
   ResourceRequirements resources = 3;
   SecurityContext security_context = 4;
   repeated string command = 5;
+  string wasm_module_path = 6;
 }
 
 enum RestartPolicy {

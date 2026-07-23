@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+import "pod.proto";
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+message RemoteCluster {
+  string name = 1;
+  string api_addr = 2;
+}
+
+service FederationService {
+  rpc RegisterCluster(RegisterClusterRequest) returns (RemoteCluster);
+  rpc UnregisterCluster(UnregisterClusterRequest) returns (UnregisterClusterResponse);
+  rpc ListClusters(ListClustersRequest) returns (ListClustersResponse);
+  rpc ListFederatedPods(ListFederatedPodsRequest) returns (ListFederatedPodsResponse);
+}
+
+message RegisterClusterRequest {
+  string name = 1;
+  string api_addr = 2;
+  string join_token = 3;
+}
+
+message UnregisterClusterRequest {
+  string name = 1;
+}
+
+message UnregisterClusterResponse {}
+
+message ListClustersRequest {}
+
+message ListClustersResponse {
+  repeated RemoteCluster items = 1;
+}
+
+message ListFederatedPodsRequest {
+  string namespace = 1;
+}
+
+message FederatedPods {
+  string cluster = 1;
+  repeated Pod items = 2;
+  string error = 3;
+}
+
+message ListFederatedPodsResponse {
+  repeated FederatedPods results = 1;
+}

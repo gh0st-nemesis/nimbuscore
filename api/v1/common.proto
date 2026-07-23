@@ -16,6 +16,7 @@ message ObjectMeta {
 message ResourceList {
   int64 cpu_millis = 1;
   int64 memory_bytes = 2;
+  map<string, int64> accelerators = 3;
 }
 
 message ResourceRequirements {

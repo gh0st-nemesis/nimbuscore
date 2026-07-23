@@ -1,6 +1,7 @@
 package imagesign
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
@@ -107,7 +108,7 @@ func (tf *TrustFile) Add(imageRef string, sig []byte) {
 }
 
 type Verifier interface {
-	Verify(imageRef string) error
+	Verify(ctx context.Context, imageRef string) error
 }
 
 type KeyVerifier struct {
@@ -119,7 +120,7 @@ func NewKeyVerifier(pub *ecdsa.PublicKey, tf *TrustFile) *KeyVerifier {
 	return &KeyVerifier{pub: pub, tf: tf}
 }
 
-func (v *KeyVerifier) Verify(imageRef string) error {
+func (v *KeyVerifier) Verify(_ context.Context, imageRef string) error {
 	encoded, ok := v.tf.Signatures[imageRef]
 	if !ok {
 		return fmt.Errorf("imagesign: no signature on file for image %q", imageRef)

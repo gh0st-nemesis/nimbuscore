@@ -40,7 +40,22 @@ var methodResourceVerb = map[string]struct{ Resource, Verb string }{
 	"/nimbuscore.v1.SecretService/ListSecrets":  {"secrets", "list"},
 	"/nimbuscore.v1.SecretService/DeleteSecret": {"secrets", "delete"},
 
+	"/nimbuscore.v1.ImageRegistryService/PushImage":   {"images", "create"},
+	"/nimbuscore.v1.ImageRegistryService/GetImage":    {"images", "get"},
+	"/nimbuscore.v1.ImageRegistryService/ListImages":  {"images", "list"},
+	"/nimbuscore.v1.ImageRegistryService/DeleteImage": {"images", "delete"},
+
+	"/nimbuscore.v1.BackupService/CreateBackup":  {"backup", "create"},
+	"/nimbuscore.v1.BackupService/RestoreBackup": {"backup", "restore"},
+
+	"/nimbuscore.v1.FederationService/RegisterCluster":   {"federation", "create"},
+	"/nimbuscore.v1.FederationService/UnregisterCluster": {"federation", "delete"},
+	"/nimbuscore.v1.FederationService/ListClusters":      {"federation", "list"},
+	"/nimbuscore.v1.FederationService/ListFederatedPods": {"federation", "list"},
+
 	"/nimbuscore.v1.AdminService/JoinRaft": {"admin", "join"},
+
+	"/nimbuscore.v1.FinOpsService/GetCostReport": {"finops", "get"},
 }
 
 func DefaultRBACBindings() []rbac.Binding {
@@ -55,7 +70,7 @@ func DefaultRBACBindings() []rbac.Binding {
 	clientRole := rbac.Role{
 		Name: "client",
 		Rules: []rbac.Rule{
-			{Resources: []string{"pods", "deployments", "volumes", "networkpolicies", "policies", "secrets"}, Verbs: []string{rbac.Wildcard}},
+			{Resources: []string{"pods", "deployments", "volumes", "networkpolicies", "policies", "secrets", "images", "backup", "federation", "finops"}, Verbs: []string{rbac.Wildcard}},
 			{Resources: []string{"nodes"}, Verbs: []string{"get", "list"}},
 		},
 	}

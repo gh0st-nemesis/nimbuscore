@@ -19,7 +19,7 @@ func TestDeploymentReconcilerDoesNotClobberConcurrentReplicaChange(t *testing.T)
 	seedReadyNode(t, ctx, nodes, "node-1")
 
 	reconciler := NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 0)
-	hpa := NewHorizontalAutoscaler(deployments, pods, 0)
+	hpa := NewHorizontalAutoscaler(deployments, pods, nodes, 0)
 
 	d := &v1.Deployment{
 		Metadata: &v1.ObjectMeta{Name: "web", Namespace: "default"},

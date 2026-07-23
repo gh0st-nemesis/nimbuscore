@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+message BackupEntry {
+  string key = 1;
+  bytes value = 2;
+}
+
+message BackupData {
+  repeated BackupEntry entries = 1;
+}
+
+service BackupService {
+  rpc CreateBackup(CreateBackupRequest) returns (BackupData);
+  rpc RestoreBackup(RestoreBackupRequest) returns (RestoreBackupResponse);
+}
+
+message CreateBackupRequest {}
+
+message RestoreBackupRequest {
+  BackupData backup = 1;
+}
+
+message RestoreBackupResponse {
+  int32 restored_count = 1;
+}

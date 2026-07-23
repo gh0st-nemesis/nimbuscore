@@ -16,7 +16,7 @@ type fakeVerifier struct {
 	signed map[string]bool
 }
 
-func (f *fakeVerifier) Verify(imageRef string) error {
+func (f *fakeVerifier) Verify(_ context.Context, imageRef string) error {
 	if !f.signed[imageRef] {
 		return errNotSigned
 	}

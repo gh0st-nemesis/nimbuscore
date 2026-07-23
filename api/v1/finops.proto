@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+message CostReportRequest {
+  string namespace = 1;
+  string label_key = 2;
+}
+
+message CostReport {
+  double total = 1;
+  map<string, double> by_namespace = 2;
+  map<string, double> by_label = 3;
+}
+
+service FinOpsService {
+  rpc GetCostReport(CostReportRequest) returns (CostReport);
+}

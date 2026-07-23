@@ -1,12 +1,17 @@
 package agent
 
 import (
+	"context"
+	"fmt"
+	"os"
 	"os/exec"
 	"sync"
 
 	"github.com/shirou/gopsutil/v3/process"
+	"github.com/tetratelabs/wazero"
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
+	"github.com/gh0st-nemesis/nimbuscore/internal/wasmrt"
 )
 
 type exitEvent struct {
@@ -15,9 +20,10 @@ type exitEvent struct {
 }
 
 type trackedProcess struct {
-	pod      *v1.Pod
-	cmd      *exec.Cmd
-	restarts int32
+	pod         *v1.Pod
+	cmd         *exec.Cmd
+	wasmRuntime *wasmrt.Runtime
+	restarts    int32
 }
 
 type processRuntime struct {
@@ -67,7 +73,7 @@ func (r *processRuntime) memoryUsageBytes(key string) int64 {
 	r.mu.Lock()
 	tp, ok := r.procs[key]
 	r.mu.Unlock()
-	if !ok || tp.cmd.Process == nil {
+	if !ok || tp.cmd == nil || tp.cmd.Process == nil {
 		return 0
 	}
 	proc, err := process.NewProcess(int32(tp.cmd.Process.Pid))
@@ -81,17 +87,27 @@ func (r *processRuntime) memoryUsageBytes(key string) int64 {
 	return int64(info.RSS)
 }
 
-func command(pod *v1.Pod) []string {
+func firstContainer(pod *v1.Pod) *v1.Container {
 	containers := pod.GetSpec().GetContainers()
 	if len(containers) == 0 {
 		return nil
 	}
-	return containers[0].GetCommand()
+	return containers[0]
 }
 
 func (r *processRuntime) start(pod *v1.Pod) error {
+	if c := firstContainer(pod); c.GetWasmModulePath() != "" {
+		return r.startWASM(pod, c.GetWasmModulePath())
+	}
+	return r.startProcess(pod)
+}
+
+func (r *processRuntime) startProcess(pod *v1.Pod) error {
 	key := podKey(pod)
-	args := command(pod)
+	args := firstContainer(pod).GetCommand()
+	if len(args) == 0 {
+		return fmt.Errorf("agent: pod %s has neither a command nor a wasm_module_path to run", key)
+	}
 
 	cmd := exec.Command(args[0], args[1:]...)
 	if err := cmd.Start(); err != nil {
@@ -121,6 +137,42 @@ func (r *processRuntime) start(pod *v1.Pod) error {
 	return nil
 }
 
+func (r *processRuntime) startWASM(pod *v1.Pod, modulePath string) error {
+	key := podKey(pod)
+
+	wasmBytes, err := os.ReadFile(modulePath)
+	if err != nil {
+		return fmt.Errorf("agent: read wasm module %s: %w", modulePath, err)
+	}
+
+	ctx := context.Background()
+	rt, err := wasmrt.New(ctx)
+	if err != nil {
+		return fmt.Errorf("agent: init wasm runtime for %s: %w", modulePath, err)
+	}
+
+	r.mu.Lock()
+	restarts := int32(0)
+	if existing, ok := r.procs[key]; ok {
+		restarts = existing.restarts
+	}
+	r.procs[key] = &trackedProcess{pod: pod, wasmRuntime: rt, restarts: restarts}
+	r.mu.Unlock()
+
+	go func() {
+		config := wazero.NewModuleConfig().WithStartFunctions("_start").WithStdout(os.Stdout).WithStderr(os.Stderr)
+		exitCode, runErr := rt.Run(ctx, wasmBytes, config)
+		rt.Close(ctx)
+
+		code := int(exitCode)
+		if runErr != nil {
+			code = -1
+		}
+		r.exited <- exitEvent{key: key, exitCode: code}
+	}()
+	return nil
+}
+
 func (r *processRuntime) restart(pod *v1.Pod) error {
 	key := podKey(pod)
 	r.mu.Lock()
@@ -137,8 +189,14 @@ func (r *processRuntime) stop(key string) {
 	delete(r.procs, key)
 	r.mu.Unlock()
 
-	if ok && tp.cmd.Process != nil {
+	if !ok {
+		return
+	}
+	if tp.cmd != nil && tp.cmd.Process != nil {
 		_ = tp.cmd.Process.Kill()
+	}
+	if tp.wasmRuntime != nil {
+		_ = tp.wasmRuntime.Close(context.Background())
 	}
 }
 

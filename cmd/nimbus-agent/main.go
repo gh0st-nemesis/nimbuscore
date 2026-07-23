@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -19,6 +21,7 @@ import (
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 	"github.com/gh0st-nemesis/nimbuscore/internal/agent"
 	"github.com/gh0st-nemesis/nimbuscore/internal/identity"
+	"github.com/gh0st-nemesis/nimbuscore/internal/mesh"
 	"github.com/gh0st-nemesis/nimbuscore/internal/telemetry"
 )
 
@@ -29,6 +32,7 @@ func main() {
 	joinToken := fs.String("join-token", "", "shared bootstrap token (required)")
 	cpuMillis := fs.Int64("cpu-millis", 2000, "advertised allocatable CPU, in millicores")
 	memoryBytes := fs.Int64("memory-bytes", 2<<30, "advertised allocatable memory, in bytes")
+	acceleratorsFlag := fs.String("accelerators", "", "advertised accelerators, e.g. \"nvidia.com/gpu=2\" (comma-separated for multiple kinds)")
 	heartbeatInterval := fs.Duration("heartbeat-interval", 5*time.Second, "interval between heartbeats")
 	otelExporter := fs.String("otel-exporter", "none", "OpenTelemetry exporter: none, stdout, or otlp")
 	otlpEndpoint := fs.String("otlp-endpoint", "127.0.0.1:4317", "OTLP gRPC collector endpoint (when -otel-exporter=otlp)")
@@ -68,9 +72,11 @@ func main() {
 	log.Printf("agent: identity %s", selfID)
 	expectControlPlane := spiffeid.MatchMemberOf(selfID.TrustDomain())
 
+	breaker := mesh.NewCircuitBreaker(5, 30*time.Second)
 	conn, err := grpc.NewClient(*controlPlaneAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(svid.ClientTLSConfig(expectControlPlane))),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		grpc.WithUnaryInterceptor(mesh.NewClientInterceptor(mesh.DefaultRetryPolicy(), breaker)),
 	)
 	if err != nil {
 		log.Fatalf("agent: dial control plane: %v", err)
@@ -78,7 +84,7 @@ func main() {
 	defer conn.Close()
 
 	nodeClient := v1.NewNodeServiceClient(conn)
-	capacity := &v1.ResourceList{CpuMillis: *cpuMillis, MemoryBytes: *memoryBytes}
+	capacity := &v1.ResourceList{CpuMillis: *cpuMillis, MemoryBytes: *memoryBytes, Accelerators: parseAccelerators(*acceleratorsFlag)}
 
 	if _, err := nodeClient.CreateNode(ctx, &v1.CreateNodeRequest{
 		Node: &v1.Node{
@@ -121,6 +127,29 @@ func heartbeatLoop(ctx context.Context, client v1.NodeServiceClient, name string
 			}
 		}
 	}
+}
+
+func parseAccelerators(s string) map[string]int64 {
+	if s == "" {
+		return nil
+	}
+	out := make(map[string]int64)
+	for _, entry := range strings.Split(s, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		name, countStr, ok := strings.Cut(entry, "=")
+		if !ok {
+			log.Fatalf("agent: invalid -accelerators entry %q, want name=count", entry)
+		}
+		count, err := strconv.ParseInt(strings.TrimSpace(countStr), 10, 64)
+		if err != nil {
+			log.Fatalf("agent: invalid count in -accelerators entry %q: %v", entry, err)
+		}
+		out[strings.TrimSpace(name)] = count
+	}
+	return out
 }
 
 func defaultNodeName() string {
