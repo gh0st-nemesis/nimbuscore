@@ -18,44 +18,24 @@ import (
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
 )
 
-// ErrNotLeader is returned by write operations issued against a
-// RaftStore replica that is not currently the cluster leader. Unlike a
-// generic key/value store, a Raft-replicated log only accepts writes on
-// the leader — followers must redirect callers there. Phase 2 does not
-// implement automatic proxying; callers (the API server) surface this to
-// the client instead, the same contract etcd/Consul expose.
 var ErrNotLeader = errors.New("store: not the raft leader")
 
-// command is the payload appended to the Raft log. JSON keeps this
-// internal-only encoding simple; it never crosses the wire outside the
-// replication protocol itself, so there's no reason to reuse the
-// Protobuf resource schema here.
 type command struct {
-	Op    string `json:"op"` // "put" or "delete"
+	Op    string `json:"op"`
 	Key   string `json:"key"`
 	Value []byte `json:"value,omitempty"`
 }
 
-// RaftConfig configures a multi-node RaftStore.
 type RaftConfig struct {
-	// NodeID must be unique across the cluster.
 	NodeID string
-	// BindAddr is the TCP address (host:port) the Raft transport
-	// listens on for inter-node replication traffic — separate from the
-	// gRPC API port.
+
 	BindAddr string
-	// DataDir stores the Raft log, stable store, and snapshots.
+
 	DataDir string
-	// Bootstrap starts a brand-new single-node cluster with this node as
-	// its sole voter. Set only on the very first node; every other node
-	// joins an existing leader instead (design doc section 08, phase 2:
-	// "cluster réel multi-machines, tolérant à la panne d'un nœud").
+
 	Bootstrap bool
 }
 
-// RaftStore is a Store replicated via the Raft consensus protocol
-// (hashicorp/raft + BoltDB-backed log/stable store — design doc section
-// 03), replacing the single-node in-memory Store from Phase 1.
 type RaftStore struct {
 	raft      *raft.Raft
 	transport *raft.NetworkTransport
@@ -63,11 +43,6 @@ type RaftStore struct {
 	logStore  *raftboltdb.BoltStore
 }
 
-// NewRaftStore starts (or rejoins) a Raft node according to cfg. Callers
-// that are not the first node in the cluster must still call this — it
-// starts the local Raft instance and its transport listener — and then
-// have an existing leader call AddVoter with this node's NodeID and
-// BindAddr (see AdminService.JoinRaft) before it becomes a full member.
 func NewRaftStore(cfg RaftConfig) (*RaftStore, error) {
 	if cfg.NodeID == "" {
 		return nil, errors.New("store: NodeID is required")
@@ -123,20 +98,15 @@ func NewRaftStore(cfg RaftConfig) (*RaftStore, error) {
 	return &RaftStore{raft: r, transport: transport, fsm: f, logStore: logStore}, nil
 }
 
-// IsLeader reports whether this node currently holds Raft leadership.
 func (s *RaftStore) IsLeader() bool {
 	return s.raft.State() == raft.Leader
 }
 
-// LeaderAddr returns the Raft transport address of the current leader,
-// if known.
 func (s *RaftStore) LeaderAddr() string {
 	addr, _ := s.raft.LeaderWithID()
 	return string(addr)
 }
 
-// AddVoter adds a new node to the cluster's voter set. Only valid on the
-// leader.
 func (s *RaftStore) AddVoter(nodeID, addr string) error {
 	if !s.IsLeader() {
 		return ErrNotLeader
@@ -144,7 +114,6 @@ func (s *RaftStore) AddVoter(nodeID, addr string) error {
 	return s.raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(addr), 0, 10*time.Second).Error()
 }
 
-// Shutdown stops the Raft node and closes its log store.
 func (s *RaftStore) Shutdown() error {
 	if err := s.raft.Shutdown().Error(); err != nil {
 		return err
@@ -179,10 +148,6 @@ func (s *RaftStore) List(_ context.Context, prefix string) (map[string][]byte, e
 	return s.fsm.list(prefix), nil
 }
 
-// fsm applies committed log entries to an in-memory map. Every node in
-// the cluster runs its own fsm and reaches the same state by replaying
-// the same log in the same order — the core Raft guarantee that makes
-// reads safe on followers without contacting the leader.
 type fsm struct {
 	mu   sync.RWMutex
 	data map[string][]byte

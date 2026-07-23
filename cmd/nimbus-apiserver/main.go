@@ -1,13 +1,3 @@
-// Command nimbus-apiserver runs one control-plane replica: the gRPC API
-// server, a Raft-replicated store, and the controller manager's
-// reconciliation loops — all in one process, per design doc section 08
-// phase 2 ("cluster réel multi-machines, tolérant à la panne d'un
-// nœud").
-//
-// The very first replica in a cluster is started with -bootstrap; it
-// generates the cluster's CA and becomes the sole Raft voter. Every
-// other replica joins by enrolling against it (or any later leader) with
-// -join-api-addr and -join-token.
 package main
 
 import (
@@ -94,12 +84,7 @@ func main() {
 	v1.RegisterDeploymentServiceServer(srv.GRPCServer(), apiserver.NewDeploymentService(raftStore))
 	v1.RegisterAdminServiceServer(srv.GRPCServer(), apiserver.NewAdminService(raftStore))
 	if ca != nil {
-		// Only the node holding the CA's private key can issue SVIDs —
-		// in Phase 2 that's whichever replica was started with
-		// -bootstrap, for its whole lifetime. Every other replica and
-		// every agent must enroll against *that* address specifically.
-		// A highly-available CA (a real SPIRE server, or replicating the
-		// CA key through Raft itself) is later-phase work.
+
 		v1.RegisterIdentityServiceServer(srv.GRPCServer(), apiserver.NewIdentityService(ca, *joinToken, identity.DefaultSVIDTTL))
 	}
 
@@ -117,9 +102,6 @@ func main() {
 	}
 }
 
-// loadOrBootstrapSVID returns this replica's SVID. The bootstrap replica
-// mints its own CA and self-issues a control-plane SVID; every other
-// replica enrolls against joinAddr using joinToken.
 func loadOrBootstrapSVID(ctx context.Context, bootstrap bool, trustDomain, nodeID, joinAddr, joinToken string) (*identity.SVID, *identity.CA, error) {
 	if !bootstrap {
 		svid, err := identity.Enroll(ctx, identity.EnrollConfig{
@@ -153,11 +135,6 @@ func loadOrBootstrapSVID(ctx context.Context, bootstrap bool, trustDomain, nodeI
 	return identity.NewSVID(key, cert, ca.TrustBundle()), ca, nil
 }
 
-// joinRaftCluster calls AdminService.JoinRaft on joinAddr so the current
-// leader adds this replica as a voter. Our own Raft transport is already
-// listening on raftAddr by the time this runs (started inside
-// store.NewRaftStore), so replication can begin as soon as the leader
-// accepts us.
 func joinRaftCluster(ctx context.Context, svid *identity.SVID, expect spiffeid.Matcher, joinAddr, nodeID, raftAddr string) error {
 	conn, err := grpc.NewClient(joinAddr, grpc.WithTransportCredentials(credentials.NewTLS(svid.ClientTLSConfig(expect))))
 	if err != nil {

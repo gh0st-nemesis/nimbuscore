@@ -28,10 +28,6 @@ const (
 // PodServiceClient is the client API for PodService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// PodService is the API Server's gRPC-internal surface for Pod objects
-// (design doc section 03). A REST façade (grpc-gateway) sits in front of
-// this for external clients in a later phase.
 type PodServiceClient interface {
 	CreatePod(ctx context.Context, in *CreatePodRequest, opts ...grpc.CallOption) (*Pod, error)
 	GetPod(ctx context.Context, in *GetPodRequest, opts ...grpc.CallOption) (*Pod, error)
@@ -90,10 +86,6 @@ func (c *podServiceClient) DeletePod(ctx context.Context, in *DeletePodRequest, 
 // PodServiceServer is the server API for PodService service.
 // All implementations must embed UnimplementedPodServiceServer
 // for forward compatibility.
-//
-// PodService is the API Server's gRPC-internal surface for Pod objects
-// (design doc section 03). A REST façade (grpc-gateway) sits in front of
-// this for external clients in a later phase.
 type PodServiceServer interface {
 	CreatePod(context.Context, *CreatePodRequest) (*Pod, error)
 	GetPod(context.Context, *GetPodRequest) (*Pod, error)
@@ -258,9 +250,6 @@ type NodeServiceClient interface {
 	GetNode(ctx context.Context, in *GetNodeRequest, opts ...grpc.CallOption) (*Node, error)
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
 	DeleteNode(ctx context.Context, in *DeleteNodeRequest, opts ...grpc.CallOption) (*DeleteNodeResponse, error)
-	// Heartbeat is called periodically by the agent (design doc section
-	// 08, phase 2: "health checks et détection de nœud mort"). Missing a
-	// few of these is what flips a Node's status.ready to false.
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 }
 
@@ -330,9 +319,6 @@ type NodeServiceServer interface {
 	GetNode(context.Context, *GetNodeRequest) (*Node, error)
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
 	DeleteNode(context.Context, *DeleteNodeRequest) (*DeleteNodeResponse, error)
-	// Heartbeat is called periodically by the agent (design doc section
-	// 08, phase 2: "health checks et détection de nœud mort"). Missing a
-	// few of these is what flips a Node's status.ready to false.
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
 }

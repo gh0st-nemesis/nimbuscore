@@ -9,9 +9,6 @@ import "deployment.proto";
 
 option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
 
-// PodService is the API Server's gRPC-internal surface for Pod objects
-// (design doc section 03). A REST façade (grpc-gateway) sits in front of
-// this for external clients in a later phase.
 service PodService {
   rpc CreatePod(CreatePodRequest) returns (Pod);
   rpc GetPod(GetPodRequest) returns (Pod);
@@ -48,9 +45,6 @@ service NodeService {
   rpc GetNode(GetNodeRequest) returns (Node);
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
   rpc DeleteNode(DeleteNodeRequest) returns (DeleteNodeResponse);
-  // Heartbeat is called periodically by the agent (design doc section
-  // 08, phase 2: "health checks et détection de nœud mort"). Missing a
-  // few of these is what flips a Node's status.ready to false.
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }
 

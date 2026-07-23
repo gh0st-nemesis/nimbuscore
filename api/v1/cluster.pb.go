@@ -71,14 +71,11 @@ func (SVIDRole) EnumDescriptor() ([]byte, []int) {
 }
 
 type RequestSVIDRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	JoinToken string                 `protobuf:"bytes,1,opt,name=join_token,json=joinToken,proto3" json:"join_token,omitempty"`
-	// csr_der is a PKCS#10 CertificateRequest, DER-encoded, over an
-	// ECDSA P-256 key generated locally — the private key never leaves
-	// the requester.
-	CsrDer        []byte   `protobuf:"bytes,2,opt,name=csr_der,json=csrDer,proto3" json:"csr_der,omitempty"`
-	NodeName      string   `protobuf:"bytes,3,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
-	Role          SVIDRole `protobuf:"varint,4,opt,name=role,proto3,enum=nimbuscore.v1.SVIDRole" json:"role,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JoinToken     string                 `protobuf:"bytes,1,opt,name=join_token,json=joinToken,proto3" json:"join_token,omitempty"`
+	CsrDer        []byte                 `protobuf:"bytes,2,opt,name=csr_der,json=csrDer,proto3" json:"csr_der,omitempty"`
+	NodeName      string                 `protobuf:"bytes,3,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	Role          SVIDRole               `protobuf:"varint,4,opt,name=role,proto3,enum=nimbuscore.v1.SVIDRole" json:"role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

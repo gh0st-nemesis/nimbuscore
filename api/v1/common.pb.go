@@ -21,20 +21,14 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ObjectMeta is embedded in every resource kind (Pod, Node, Deployment).
-// Mirrors the subset of Kubernetes' ObjectMeta needed for Phase 1:
-// identity, versioning for optimistic concurrency, and label-based
-// selection.
 type ObjectMeta struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Name      string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Namespace string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	Uid       string                 `protobuf:"bytes,3,opt,name=uid,proto3" json:"uid,omitempty"`
-	// resource_version changes on every write; callers use it for
-	// optimistic-concurrency checks once the store enforces them (Phase 2).
-	ResourceVersion string            `protobuf:"bytes,4,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
-	Labels          map[string]string `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	CreatedAtUnix   int64             `protobuf:"varint,6,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Namespace       string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Uid             string                 `protobuf:"bytes,3,opt,name=uid,proto3" json:"uid,omitempty"`
+	ResourceVersion string                 `protobuf:"bytes,4,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	Labels          map[string]string      `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	CreatedAtUnix   int64                  `protobuf:"varint,6,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -111,10 +105,6 @@ func (x *ObjectMeta) GetCreatedAtUnix() int64 {
 	return 0
 }
 
-// ResourceList expresses CPU and memory quantities. CPU is in millicores
-// (1000 = 1 vCPU), memory in bytes — fixed-point integers rather than
-// Kubernetes' free-form quantity strings, to keep scheduler arithmetic
-// (design doc section 03) simple.
 type ResourceList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CpuMillis     int64                  `protobuf:"varint,1,opt,name=cpu_millis,json=cpuMillis,proto3" json:"cpu_millis,omitempty"`
@@ -219,9 +209,6 @@ func (x *ResourceRequirements) GetLimits() *ResourceList {
 	return nil
 }
 
-// Condition is a point-in-time observation of one aspect of a resource's
-// state (e.g. "Ready", "Available"), following the pattern used
-// throughout the design for status reporting.
 type Condition struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Type               string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`

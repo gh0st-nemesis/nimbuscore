@@ -11,15 +11,11 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
 )
 
-// deploymentService implements v1.DeploymentServiceServer. Writes here
-// are picked up by controller.DeploymentReconciler on its next resync
-// tick — there is no synchronous "create the pods now" step.
 type deploymentService struct {
 	v1.UnimplementedDeploymentServiceServer
 	deployments *registry.Registry[*v1.Deployment]
 }
 
-// NewDeploymentService returns a v1.DeploymentServiceServer backed by s.
 func NewDeploymentService(s store.Store) v1.DeploymentServiceServer {
 	return &deploymentService{deployments: registry.New(s, "deployments", func() *v1.Deployment { return &v1.Deployment{} })}
 }

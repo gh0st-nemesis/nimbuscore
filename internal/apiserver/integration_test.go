@@ -18,12 +18,6 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
 )
 
-// TestDeploymentCreateReconcilesToPods exercises the full Phase 1 loop
-// end to end: a gRPC client creates a Deployment through the API
-// server, and the controller manager's DeploymentReconciler — running
-// concurrently, on its own resync ticker — picks it up and materializes
-// the matching Pods, exactly as it would with a real client over the
-// network.
 func TestDeploymentCreateReconcilesToPods(t *testing.T) {
 	st := store.NewMemStore()
 
@@ -33,7 +27,7 @@ func TestDeploymentCreateReconcilesToPods(t *testing.T) {
 	v1.RegisterNodeServiceServer(grpcServer, apiserver.NewNodeService(st))
 
 	lis := bufconn.Listen(1 << 20)
-	go grpcServer.Serve(lis) //nolint:errcheck // Stop() below always ends this with an expected error
+	go grpcServer.Serve(lis)
 
 	defer grpcServer.Stop()
 

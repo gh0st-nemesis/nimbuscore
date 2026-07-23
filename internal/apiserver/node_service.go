@@ -12,14 +12,11 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
 )
 
-// nodeService implements v1.NodeServiceServer. Nodes are cluster-scoped
-// (no namespace), so it stores them under the empty namespace.
 type nodeService struct {
 	v1.UnimplementedNodeServiceServer
 	nodes *registry.Registry[*v1.Node]
 }
 
-// NewNodeService returns a v1.NodeServiceServer backed by s.
 func NewNodeService(s store.Store) v1.NodeServiceServer {
 	return &nodeService{nodes: registry.New(s, "nodes", func() *v1.Node { return &v1.Node{} })}
 }
@@ -58,9 +55,6 @@ func (svc *nodeService) DeleteNode(ctx context.Context, req *v1.DeleteNodeReques
 	return &v1.DeleteNodeResponse{}, nil
 }
 
-// Heartbeat marks a Node ready and refreshes its last-seen timestamp.
-// The node-health-controller (internal/controller/node_health.go) is
-// what flips status.ready back to false once these stop arriving.
 func (svc *nodeService) Heartbeat(ctx context.Context, req *v1.HeartbeatRequest) (*v1.HeartbeatResponse, error) {
 	node, err := svc.nodes.Get(ctx, "", req.GetName())
 	if err != nil {

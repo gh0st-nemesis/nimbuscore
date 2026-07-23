@@ -58,11 +58,6 @@ func TestIssueSVIDRejectsOtherTrustDomain(t *testing.T) {
 	}
 }
 
-// TestMTLSHandshakeEnforcesIdentity spins up a real TCP+TLS listener
-// using (*SVID).ServerTLSConfig and dials it with (*SVID).ClientTLSConfig,
-// verifying both that a legitimate peer connects and that a client
-// expecting the wrong identity is rejected — the same check
-// apiserver.AuthInterceptor relies on in production.
 func TestMTLSHandshakeEnforcesIdentity(t *testing.T) {
 	ca, err := NewCA("nimbuscore.local")
 	if err != nil {

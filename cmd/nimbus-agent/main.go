@@ -1,7 +1,3 @@
-// Command nimbus-agent runs the per-node agent (kubelet equivalent). It
-// enrolls for its own SPIFFE SVID, registers itself as a Node, and
-// heartbeats periodically so the control plane's node-health-controller
-// can tell it apart from a dead node (design doc section 08, phase 2).
 package main
 
 import (
@@ -23,8 +19,6 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/identity"
 )
 
-// noopRuntime is a placeholder Runtime until the containerd/CRI client
-// lands.
 type noopRuntime struct{}
 
 func (noopRuntime) RunPod(_ context.Context, _ string) error  { return nil }

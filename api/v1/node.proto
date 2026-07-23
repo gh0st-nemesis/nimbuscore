@@ -7,8 +7,6 @@ import "common.proto";
 option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
 
 message NodeSpec {
-  // unschedulable cordons the node — the scheduler must skip it during
-  // the filter phase (design doc section 03).
   bool unschedulable = 1;
 }
 
@@ -17,9 +15,6 @@ message NodeStatus {
   ResourceList allocatable = 2;
   bool ready = 3;
   repeated Condition conditions = 4;
-  // last_heartbeat_unix is set by NodeService.Heartbeat; the
-  // node-health-controller (design doc section 08, phase 2) marks the
-  // node not-ready once this goes stale.
   int64 last_heartbeat_unix = 5;
 }
 

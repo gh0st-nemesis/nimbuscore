@@ -13,24 +13,13 @@ import (
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 )
 
-// EnrollConfig describes a one-time enrollment call against a running
-// control plane's IdentityService.
 type EnrollConfig struct {
-	// ControlPlaneAddr is host:port of a control-plane replica's gRPC
-	// API that has IdentityService registered.
 	ControlPlaneAddr string
 	JoinToken        string
 	Name             string
 	Role             v1.SVIDRole
 }
 
-// Enroll performs the trust-on-first-use bootstrap handshake: it dials
-// ControlPlaneAddr without verifying the peer — there is no trust bundle
-// to verify it against yet, the same problem kubeadm solves with a
-// discovery-token CA hash pinned out of band — presents JoinToken and a
-// freshly generated CSR over that connection, and returns an SVID built
-// from the response. Every connection after this one should go through
-// (*SVID).ClientTLSConfig, which does verify the peer.
 func Enroll(ctx context.Context, cfg EnrollConfig) (*SVID, error) {
 	csrDER, key, err := GenerateCSR(cfg.Name)
 	if err != nil {
@@ -39,7 +28,7 @@ func Enroll(ctx context.Context, cfg EnrollConfig) (*SVID, error) {
 
 	bootstrapTLS := &tls.Config{
 		MinVersion:         tls.VersionTLS13,
-		InsecureSkipVerify: true, //nolint:gosec // TOFU by design — see doc comment above
+		InsecureSkipVerify: true,
 	}
 
 	conn, err := grpc.NewClient(cfg.ControlPlaneAddr, grpc.WithTransportCredentials(credentials.NewTLS(bootstrapTLS)))

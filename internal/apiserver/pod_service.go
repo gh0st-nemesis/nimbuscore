@@ -11,16 +11,11 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
 )
 
-// podService implements v1.PodServiceServer directly against a Pod
-// registry. Admission control (signature verification, RBAC, quotas —
-// design doc section 03) is not wired in yet; every write is accepted
-// as-is until Phase 3.
 type podService struct {
 	v1.UnimplementedPodServiceServer
 	pods *registry.Registry[*v1.Pod]
 }
 
-// NewPodService returns a v1.PodServiceServer backed by s.
 func NewPodService(s store.Store) v1.PodServiceServer {
 	return &podService{pods: registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} })}
 }

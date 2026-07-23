@@ -10,24 +10,15 @@ import (
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 )
 
-// RaftJoiner is the subset of *store.RaftStore the AdminService needs —
-// kept narrow so this package doesn't have to depend on Raft's full
-// surface, only "can add a voter."
 type RaftJoiner interface {
 	AddVoter(nodeID, addr string) error
 }
 
-// adminService implements v1.AdminServiceServer. It is not gated by
-// AuthInterceptor's blanket membership check alone: JoinRaft additionally
-// requires the caller's SPIFFE ID path to start with "control-plane/",
-// since only other control-plane replicas — never worker nodes — may
-// add themselves as Raft voters.
 type adminService struct {
 	v1.UnimplementedAdminServiceServer
 	raft RaftJoiner
 }
 
-// NewAdminService returns a v1.AdminServiceServer backed by raft.
 func NewAdminService(raft RaftJoiner) v1.AdminServiceServer {
 	return &adminService{raft: raft}
 }

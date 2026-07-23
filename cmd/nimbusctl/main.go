@@ -1,5 +1,3 @@
-// Command nimbusctl is the NimbusCore CLI (nimbusctl), native and
-// multiplatform via spf13/cobra.
 package main
 
 import (

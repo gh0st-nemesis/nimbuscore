@@ -7,9 +7,6 @@ import (
 	"time"
 )
 
-// freeAddr returns a loopback address on an OS-assigned free port. Raft's
-// TCPTransport needs a fixed, dialable address to advertise (not ":0"),
-// but tests still need a port nothing else is using.
 func freeAddr(t *testing.T) string {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -28,9 +25,7 @@ func TestRaftStoreSingleNodePutGet(t *testing.T) {
 		DataDir:   t.TempDir(),
 		Bootstrap: true,
 	}
-	// raft.NewTCPTransport resolves an ephemeral port when given ":0",
-	// but Raft needs a fixed, dialable address for its own advertised
-	// address — so bind to a real free port instead of ":0".
+
 	cfg.BindAddr = freeAddr(t)
 
 	s, err := NewRaftStore(cfg)

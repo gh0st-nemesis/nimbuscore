@@ -25,13 +25,6 @@ const (
 // IdentityServiceClient is the client API for IdentityService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// IdentityService is the bootstrap enrollment endpoint (design doc
-// section 05, "identités éphémères"): any node or control-plane replica
-// calls RequestSVID exactly once, presenting a shared join token, to
-// obtain its first short-lived SVID and the cluster's trust bundle.
-// Every other RPC in this API requires a client certificate obtained
-// this way — RequestSVID is the one exception, reachable without one.
 type IdentityServiceClient interface {
 	RequestSVID(ctx context.Context, in *RequestSVIDRequest, opts ...grpc.CallOption) (*RequestSVIDResponse, error)
 }
@@ -57,13 +50,6 @@ func (c *identityServiceClient) RequestSVID(ctx context.Context, in *RequestSVID
 // IdentityServiceServer is the server API for IdentityService service.
 // All implementations must embed UnimplementedIdentityServiceServer
 // for forward compatibility.
-//
-// IdentityService is the bootstrap enrollment endpoint (design doc
-// section 05, "identités éphémères"): any node or control-plane replica
-// calls RequestSVID exactly once, presenting a shared join token, to
-// obtain its first short-lived SVID and the cluster's trust bundle.
-// Every other RPC in this API requires a client certificate obtained
-// this way — RequestSVID is the one exception, reachable without one.
 type IdentityServiceServer interface {
 	RequestSVID(context.Context, *RequestSVIDRequest) (*RequestSVIDResponse, error)
 	mustEmbedUnimplementedIdentityServiceServer()
@@ -141,12 +127,6 @@ const (
 // AdminServiceClient is the client API for AdminService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// AdminService is restricted to control-plane replicas: the
-// AuthInterceptor only grants access to callers whose SPIFFE ID path
-// starts with "control-plane/". JoinRaft lets a newly enrolled replica
-// add itself as a Raft voter on the current leader (design doc section
-// 08, phase 2: "Raft multi-nœuds, tolérance de panne").
 type AdminServiceClient interface {
 	JoinRaft(ctx context.Context, in *JoinRaftRequest, opts ...grpc.CallOption) (*JoinRaftResponse, error)
 }
@@ -172,12 +152,6 @@ func (c *adminServiceClient) JoinRaft(ctx context.Context, in *JoinRaftRequest, 
 // AdminServiceServer is the server API for AdminService service.
 // All implementations must embed UnimplementedAdminServiceServer
 // for forward compatibility.
-//
-// AdminService is restricted to control-plane replicas: the
-// AuthInterceptor only grants access to callers whose SPIFFE ID path
-// starts with "control-plane/". JoinRaft lets a newly enrolled replica
-// add itself as a Raft voter on the current leader (design doc section
-// 08, phase 2: "Raft multi-nœuds, tolérance de panne").
 type AdminServiceServer interface {
 	JoinRaft(context.Context, *JoinRaftRequest) (*JoinRaftResponse, error)
 	mustEmbedUnimplementedAdminServiceServer()

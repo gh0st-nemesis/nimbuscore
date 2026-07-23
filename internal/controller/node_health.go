@@ -9,21 +9,12 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
 )
 
-// NodeHealthReconciler marks Nodes not-ready once their heartbeat goes
-// stale (design doc section 08, phase 2: "health checks et détection de
-// nœud mort"). It does not evict Pods itself — DeploymentReconciler
-// checks node readiness when counting owned Pods and replaces the ones
-// sitting on a dead node, keeping eviction logic in one place.
 type NodeHealthReconciler struct {
 	nodes   *registry.Registry[*v1.Node]
 	timeout time.Duration
 	resync  time.Duration
 }
 
-// NewNodeHealthReconciler returns a reconciler that marks a Node
-// not-ready once timeout elapses since its last heartbeat, checking
-// every resync interval. timeout <= 0 defaults to 15s, resync <= 0 to
-// 5s.
 func NewNodeHealthReconciler(nodes *registry.Registry[*v1.Node], timeout, resync time.Duration) *NodeHealthReconciler {
 	if timeout <= 0 {
 		timeout = 15 * time.Second

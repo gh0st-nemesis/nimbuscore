@@ -6,10 +6,6 @@ import "common.proto";
 
 option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
 
-// Container is deliberately narrow for Phase 1 — just enough to hand a
-// workload to the agent's CRI client (design doc section 04). Security
-// context fields (seccomp profile, capabilities, no-new-privileges) land
-// in Phase 3 once admission control enforces them.
 message Container {
   string name = 1;
   string image = 2;
@@ -18,8 +14,6 @@ message Container {
 
 message PodSpec {
   repeated Container containers = 1;
-  // node_name is set by the scheduler once a placement decision is made;
-  // empty means unscheduled.
   string node_name = 2;
 }
 

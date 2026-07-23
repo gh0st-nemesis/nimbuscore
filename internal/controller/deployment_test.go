@@ -157,7 +157,6 @@ func TestReconcileOneCountsReadyReplicas(t *testing.T) {
 func TestReconcileOneStaysPendingWithoutCapacity(t *testing.T) {
 	ctx := context.Background()
 	r, deployments, pods, _ := newTestReconciler()
-	// No Node registered at all.
 
 	d := &v1.Deployment{
 		Metadata: &v1.ObjectMeta{Name: "web", Namespace: "default"},
@@ -212,7 +211,6 @@ func TestReconcileOneEvictsPodFromDeadNode(t *testing.T) {
 	}
 	originalName := before[0].GetMetadata().GetName()
 
-	// node-1 goes dark.
 	node, err := nodes.Get(ctx, "", "node-1")
 	if err != nil {
 		t.Fatalf("get node: %v", err)

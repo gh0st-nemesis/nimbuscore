@@ -17,13 +17,6 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/identity"
 )
 
-// identityService implements v1.IdentityServiceServer: the bootstrap
-// enrollment endpoint every node and control-plane replica calls once,
-// before it has an SVID of its own. Membership is gated by a single
-// shared join token — coarse on purpose. Phase 3 ("sécurité renforcée")
-// is where per-identity attestation and RBAC replace it; a shared
-// bootstrap token is the same honestly-scoped placeholder kubeadm uses
-// for kubelet TLS bootstrapping.
 type identityService struct {
 	v1.UnimplementedIdentityServiceServer
 	ca        *identity.CA
@@ -31,8 +24,6 @@ type identityService struct {
 	svidTTL   time.Duration
 }
 
-// NewIdentityService returns a v1.IdentityServiceServer that issues
-// SVIDs from ca to callers presenting joinToken.
 func NewIdentityService(ca *identity.CA, joinToken string, svidTTL time.Duration) v1.IdentityServiceServer {
 	return &identityService{ca: ca, joinToken: joinToken, svidTTL: svidTTL}
 }

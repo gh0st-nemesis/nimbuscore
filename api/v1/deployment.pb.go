@@ -22,13 +22,10 @@ const (
 )
 
 type DeploymentSpec struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Replicas int32                  `protobuf:"varint,1,opt,name=replicas,proto3" json:"replicas,omitempty"`
-	// selector labels identify the Pods this Deployment owns; the
-	// reconciler (design doc section 03, step C) stamps the same labels
-	// onto Pods it creates.
-	Selector      map[string]string `protobuf:"bytes,2,rep,name=selector,proto3" json:"selector,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Template      *PodSpec          `protobuf:"bytes,3,opt,name=template,proto3" json:"template,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Replicas      int32                  `protobuf:"varint,1,opt,name=replicas,proto3" json:"replicas,omitempty"`
+	Selector      map[string]string      `protobuf:"bytes,2,rep,name=selector,proto3" json:"selector,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Template      *PodSpec               `protobuf:"bytes,3,opt,name=template,proto3" json:"template,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

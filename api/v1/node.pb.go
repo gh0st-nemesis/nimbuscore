@@ -22,10 +22,8 @@ const (
 )
 
 type NodeSpec struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// unschedulable cordons the node — the scheduler must skip it during
-	// the filter phase (design doc section 03).
-	Unschedulable bool `protobuf:"varint,1,opt,name=unschedulable,proto3" json:"unschedulable,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Unschedulable bool                   `protobuf:"varint,1,opt,name=unschedulable,proto3" json:"unschedulable,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -68,15 +66,12 @@ func (x *NodeSpec) GetUnschedulable() bool {
 }
 
 type NodeStatus struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	Capacity    *ResourceList          `protobuf:"bytes,1,opt,name=capacity,proto3" json:"capacity,omitempty"`
-	Allocatable *ResourceList          `protobuf:"bytes,2,opt,name=allocatable,proto3" json:"allocatable,omitempty"`
-	Ready       bool                   `protobuf:"varint,3,opt,name=ready,proto3" json:"ready,omitempty"`
-	Conditions  []*Condition           `protobuf:"bytes,4,rep,name=conditions,proto3" json:"conditions,omitempty"`
-	// last_heartbeat_unix is set by NodeService.Heartbeat; the
-	// node-health-controller (design doc section 08, phase 2) marks the
-	// node not-ready once this goes stale.
-	LastHeartbeatUnix int64 `protobuf:"varint,5,opt,name=last_heartbeat_unix,json=lastHeartbeatUnix,proto3" json:"last_heartbeat_unix,omitempty"`
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Capacity          *ResourceList          `protobuf:"bytes,1,opt,name=capacity,proto3" json:"capacity,omitempty"`
+	Allocatable       *ResourceList          `protobuf:"bytes,2,opt,name=allocatable,proto3" json:"allocatable,omitempty"`
+	Ready             bool                   `protobuf:"varint,3,opt,name=ready,proto3" json:"ready,omitempty"`
+	Conditions        []*Condition           `protobuf:"bytes,4,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	LastHeartbeatUnix int64                  `protobuf:"varint,5,opt,name=last_heartbeat_unix,json=lastHeartbeatUnix,proto3" json:"last_heartbeat_unix,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }

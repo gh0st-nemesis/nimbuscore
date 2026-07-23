@@ -9,9 +9,6 @@ option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
 
 message DeploymentSpec {
   int32 replicas = 1;
-  // selector labels identify the Pods this Deployment owns; the
-  // reconciler (design doc section 03, step C) stamps the same labels
-  // onto Pods it creates.
   map<string, string> selector = 2;
   PodSpec template = 3;
 }

@@ -14,26 +14,8 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
 )
 
-// ownerLabel marks a Pod as owned by a Deployment, mirroring how
-// Kubernetes uses OwnerReferences — a plain label is enough for Phase 1
-// since we have no garbage-collector component yet.
 const ownerLabel = "nimbuscore.io/owner-deployment"
 
-// DeploymentReconciler is the concrete reconciliation loop referenced in
-// the design doc (section 03: "boucles de réconciliation — état désiré
-// vs. observé"). It is level-triggered: every tick it recomputes the
-// full desired-vs-observed diff for every Deployment, rather than
-// reacting to individual events. That's deliberate — level-triggered
-// reconcilers self-heal from any missed or out-of-order update, at the
-// cost of a fixed polling interval instead of instant reaction. Once the
-// Store gains a watch/notify API, this can move to an edge-triggered
-// work queue without changing the reconcile logic itself.
-//
-// Phase 2 adds two things on top of the Phase 1 scale up/down loop: it
-// asks the Scheduler for a Node when a Pod has none yet, and it treats a
-// Pod sitting on a not-ready Node as needing replacement — the
-// self-healing half of "cluster réel multi-machines, tolérant à la
-// panne d'un nœud" (design doc section 08, phase 2).
 type DeploymentReconciler struct {
 	deployments *registry.Registry[*v1.Deployment]
 	pods        *registry.Registry[*v1.Pod]
@@ -42,8 +24,6 @@ type DeploymentReconciler struct {
 	resync      time.Duration
 }
 
-// NewDeploymentReconciler wires a DeploymentReconciler to the registries
-// and Scheduler it reconciles against. resync <= 0 defaults to 5s.
 func NewDeploymentReconciler(
 	deployments *registry.Registry[*v1.Deployment],
 	pods *registry.Registry[*v1.Pod],
@@ -59,8 +39,6 @@ func NewDeploymentReconciler(
 
 func (r *DeploymentReconciler) Name() string { return "deployment-controller" }
 
-// Reconcile blocks, running one full pass every resync interval until
-// ctx is cancelled.
 func (r *DeploymentReconciler) Reconcile(ctx context.Context) error {
 	ticker := time.NewTicker(r.resync)
 	defer ticker.Stop()
@@ -88,10 +66,6 @@ func (r *DeploymentReconciler) reconcileAll(ctx context.Context) {
 	}
 }
 
-// reconcileOne drives a single Deployment's owned Pods toward
-// spec.replicas, schedules anything still unassigned, then writes back
-// observed status — the same read-diff-act-report cycle every
-// controller in the design follows.
 func (r *DeploymentReconciler) reconcileOne(ctx context.Context, d *v1.Deployment) error {
 	owned, err := r.ownedPods(ctx, d)
 	if err != nil {
@@ -120,7 +94,7 @@ func (r *DeploymentReconciler) reconcileOne(ctx context.Context, d *v1.Deploymen
 		}
 	}
 
-	owned, err = r.ownedPods(ctx, d) // re-read after create/delete to report accurate status
+	owned, err = r.ownedPods(ctx, d)
 	if err != nil {
 		return fmt.Errorf("re-list owned pods: %w", err)
 	}
@@ -143,10 +117,6 @@ func (r *DeploymentReconciler) reconcileOne(ctx context.Context, d *v1.Deploymen
 	return r.deployments.Put(ctx, d.GetMetadata().GetNamespace(), d.GetMetadata().GetName(), d)
 }
 
-// ownedPods lists the Pods labeled as belonging to d, evicting (deleting)
-// any that sit on a Node no longer ready. An evicted Pod isn't counted —
-// the scale-up branch above recreates it, and scheduleUnassigned places
-// the replacement on a healthy Node.
 func (r *DeploymentReconciler) ownedPods(ctx context.Context, d *v1.Deployment) ([]*v1.Pod, error) {
 	all, err := r.pods.List(ctx, d.GetMetadata().GetNamespace())
 	if err != nil {
@@ -183,17 +153,13 @@ func (r *DeploymentReconciler) nodeReady(ctx context.Context, name string) (bool
 	node, err := r.nodes.Get(ctx, "", name)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return false, nil // node deregistered entirely — treat like dead
+			return false, nil
 		}
 		return false, err
 	}
 	return node.GetStatus().GetReady(), nil
 }
 
-// scheduleUnassigned asks the Scheduler for a Node for every Pod that
-// doesn't have one yet. A Pod that fails to schedule (no capacity, no
-// ready Node) simply stays unassigned — Pending — and is retried on the
-// next tick.
 func (r *DeploymentReconciler) scheduleUnassigned(ctx context.Context, pods []*v1.Pod) error {
 	var unassigned []*v1.Pod
 	for _, p := range pods {
@@ -235,7 +201,7 @@ func (r *DeploymentReconciler) scheduleUnassigned(ctx context.Context, pods []*v
 			MemRequest: memReq,
 		}, candidates)
 		if err != nil {
-			continue // no fit yet — stays Pending, retried next tick
+			continue
 		}
 
 		p.Spec.NodeName = nodeName

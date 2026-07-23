@@ -79,10 +79,6 @@ func (PodPhase) EnumDescriptor() ([]byte, []int) {
 	return file_pod_proto_rawDescGZIP(), []int{0}
 }
 
-// Container is deliberately narrow for Phase 1 — just enough to hand a
-// workload to the agent's CRI client (design doc section 04). Security
-// context fields (seccomp profile, capabilities, no-new-privileges) land
-// in Phase 3 once admission control enforces them.
 type Container struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -144,11 +140,9 @@ func (x *Container) GetResources() *ResourceRequirements {
 }
 
 type PodSpec struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Containers []*Container           `protobuf:"bytes,1,rep,name=containers,proto3" json:"containers,omitempty"`
-	// node_name is set by the scheduler once a placement decision is made;
-	// empty means unscheduled.
-	NodeName      string `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Containers    []*Container           `protobuf:"bytes,1,rep,name=containers,proto3" json:"containers,omitempty"`
+	NodeName      string                 `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
