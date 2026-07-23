@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package nimbuscore.v1;
 
+import "common.proto";
 import "pod.proto";
 import "node.proto";
 import "deployment.proto";
@@ -47,6 +48,20 @@ service NodeService {
   rpc GetNode(GetNodeRequest) returns (Node);
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
   rpc DeleteNode(DeleteNodeRequest) returns (DeleteNodeResponse);
+  // Heartbeat is called periodically by the agent (design doc section
+  // 08, phase 2: "health checks et détection de nœud mort"). Missing a
+  // few of these is what flips a Node's status.ready to false.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message HeartbeatRequest {
+  string name = 1;
+  ResourceList capacity = 2;
+  ResourceList allocatable = 3;
+}
+
+message HeartbeatResponse {
+  bool accepted = 1;
 }
 
 message CreateNodeRequest {

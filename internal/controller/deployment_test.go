@@ -6,19 +6,36 @@ import (
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
+	"github.com/gh0st-nemesis/nimbuscore/internal/scheduler"
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
 )
 
-func newTestReconciler() (*DeploymentReconciler, *registry.Registry[*v1.Deployment], *registry.Registry[*v1.Pod]) {
+func newTestReconciler() (*DeploymentReconciler, *registry.Registry[*v1.Deployment], *registry.Registry[*v1.Pod], *registry.Registry[*v1.Node]) {
 	s := store.NewMemStore()
 	deployments := registry.New(s, "deployments", func() *v1.Deployment { return &v1.Deployment{} })
 	pods := registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} })
-	return NewDeploymentReconciler(deployments, pods, 0), deployments, pods
+	nodes := registry.New(s, "nodes", func() *v1.Node { return &v1.Node{} })
+	return NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 0), deployments, pods, nodes
+}
+
+func seedReadyNode(t *testing.T, ctx context.Context, nodes *registry.Registry[*v1.Node], name string) {
+	t.Helper()
+	n := &v1.Node{
+		Metadata: &v1.ObjectMeta{Name: name},
+		Status: &v1.NodeStatus{
+			Ready:       true,
+			Allocatable: &v1.ResourceList{CpuMillis: 4000, MemoryBytes: 4 << 30},
+		},
+	}
+	if err := nodes.Put(ctx, "", name, n); err != nil {
+		t.Fatalf("seed node %s: %v", name, err)
+	}
 }
 
 func TestReconcileOneScalesUp(t *testing.T) {
 	ctx := context.Background()
-	r, deployments, pods := newTestReconciler()
+	r, deployments, pods, nodes := newTestReconciler()
+	seedReadyNode(t, ctx, nodes, "node-1")
 
 	d := &v1.Deployment{
 		Metadata: &v1.ObjectMeta{Name: "web", Namespace: "default"},
@@ -47,6 +64,9 @@ func TestReconcileOneScalesUp(t *testing.T) {
 		if p.GetMetadata().GetLabels()[ownerLabel] != "web" {
 			t.Errorf("pod %s missing owner label", p.GetMetadata().GetName())
 		}
+		if p.GetSpec().GetNodeName() != "node-1" {
+			t.Errorf("pod %s not scheduled onto node-1, got %q", p.GetMetadata().GetName(), p.GetSpec().GetNodeName())
+		}
 	}
 
 	updated, err := deployments.Get(ctx, "default", "web")
@@ -60,7 +80,8 @@ func TestReconcileOneScalesUp(t *testing.T) {
 
 func TestReconcileOneScalesDown(t *testing.T) {
 	ctx := context.Background()
-	r, deployments, pods := newTestReconciler()
+	r, deployments, pods, nodes := newTestReconciler()
+	seedReadyNode(t, ctx, nodes, "node-1")
 
 	d := &v1.Deployment{
 		Metadata: &v1.ObjectMeta{Name: "web", Namespace: "default"},
@@ -93,7 +114,8 @@ func TestReconcileOneScalesDown(t *testing.T) {
 
 func TestReconcileOneCountsReadyReplicas(t *testing.T) {
 	ctx := context.Background()
-	r, deployments, pods := newTestReconciler()
+	r, deployments, pods, nodes := newTestReconciler()
+	seedReadyNode(t, ctx, nodes, "node-1")
 
 	d := &v1.Deployment{
 		Metadata: &v1.ObjectMeta{Name: "web", Namespace: "default"},
@@ -129,5 +151,93 @@ func TestReconcileOneCountsReadyReplicas(t *testing.T) {
 	}
 	if updated.GetStatus().GetReadyReplicas() != 1 {
 		t.Errorf("status.ready_replicas = %d, want 1", updated.GetStatus().GetReadyReplicas())
+	}
+}
+
+func TestReconcileOneStaysPendingWithoutCapacity(t *testing.T) {
+	ctx := context.Background()
+	r, deployments, pods, _ := newTestReconciler()
+	// No Node registered at all.
+
+	d := &v1.Deployment{
+		Metadata: &v1.ObjectMeta{Name: "web", Namespace: "default"},
+		Spec: &v1.DeploymentSpec{
+			Replicas: 1,
+			Selector: map[string]string{"app": "web"},
+			Template: &v1.PodSpec{Containers: []*v1.Container{{Name: "web", Image: "nginx"}}},
+		},
+	}
+	if err := deployments.Put(ctx, "default", "web", d); err != nil {
+		t.Fatalf("seed deployment: %v", err)
+	}
+	if err := r.reconcileOne(ctx, d); err != nil {
+		t.Fatalf("reconcileOne: %v", err)
+	}
+
+	got, err := pods.List(ctx, "default")
+	if err != nil {
+		t.Fatalf("list pods: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 pod, got %d", len(got))
+	}
+	if got[0].GetSpec().GetNodeName() != "" {
+		t.Errorf("pod should be unscheduled, got node %q", got[0].GetSpec().GetNodeName())
+	}
+}
+
+func TestReconcileOneEvictsPodFromDeadNode(t *testing.T) {
+	ctx := context.Background()
+	r, deployments, pods, nodes := newTestReconciler()
+	seedReadyNode(t, ctx, nodes, "node-1")
+
+	d := &v1.Deployment{
+		Metadata: &v1.ObjectMeta{Name: "web", Namespace: "default"},
+		Spec: &v1.DeploymentSpec{
+			Replicas: 1,
+			Selector: map[string]string{"app": "web"},
+			Template: &v1.PodSpec{Containers: []*v1.Container{{Name: "web", Image: "nginx"}}},
+		},
+	}
+	if err := deployments.Put(ctx, "default", "web", d); err != nil {
+		t.Fatalf("seed deployment: %v", err)
+	}
+	if err := r.reconcileOne(ctx, d); err != nil {
+		t.Fatalf("reconcileOne (initial): %v", err)
+	}
+
+	before, err := pods.List(ctx, "default")
+	if err != nil || len(before) != 1 {
+		t.Fatalf("expected 1 scheduled pod before eviction, got %d (err=%v)", len(before), err)
+	}
+	originalName := before[0].GetMetadata().GetName()
+
+	// node-1 goes dark.
+	node, err := nodes.Get(ctx, "", "node-1")
+	if err != nil {
+		t.Fatalf("get node: %v", err)
+	}
+	node.Status.Ready = false
+	if err := nodes.Put(ctx, "", "node-1", node); err != nil {
+		t.Fatalf("mark node not-ready: %v", err)
+	}
+	seedReadyNode(t, ctx, nodes, "node-2")
+
+	if err := r.reconcileOne(ctx, d); err != nil {
+		t.Fatalf("reconcileOne (after node death): %v", err)
+	}
+
+	after, err := pods.List(ctx, "default")
+	if err != nil {
+		t.Fatalf("list pods: %v", err)
+	}
+	if len(after) != 1 {
+		t.Fatalf("want 1 pod after eviction+replacement, got %d", len(after))
+	}
+	if after[0].GetMetadata().GetName() == originalName && after[0].GetSpec().GetNodeName() == "node-1" {
+		t.Fatalf("pod was not evicted from dead node-1")
+	}
+	if after[0].GetSpec().GetNodeName() != "node-2" {
+		t.Errorf("replacement pod scheduled onto %q, want node-2", after[0].GetSpec().GetNodeName())
 	}
 }

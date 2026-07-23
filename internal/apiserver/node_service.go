@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -55,4 +56,31 @@ func (svc *nodeService) DeleteNode(ctx context.Context, req *v1.DeleteNodeReques
 		return nil, status.Errorf(codes.Internal, "delete node: %v", err)
 	}
 	return &v1.DeleteNodeResponse{}, nil
+}
+
+// Heartbeat marks a Node ready and refreshes its last-seen timestamp.
+// The node-health-controller (internal/controller/node_health.go) is
+// what flips status.ready back to false once these stop arriving.
+func (svc *nodeService) Heartbeat(ctx context.Context, req *v1.HeartbeatRequest) (*v1.HeartbeatResponse, error) {
+	node, err := svc.nodes.Get(ctx, "", req.GetName())
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "node %s: %v", req.GetName(), err)
+	}
+
+	if node.Status == nil {
+		node.Status = &v1.NodeStatus{}
+	}
+	node.Status.Ready = true
+	node.Status.LastHeartbeatUnix = time.Now().Unix()
+	if req.GetCapacity() != nil {
+		node.Status.Capacity = req.GetCapacity()
+	}
+	if req.GetAllocatable() != nil {
+		node.Status.Allocatable = req.GetAllocatable()
+	}
+
+	if err := svc.nodes.Put(ctx, "", req.GetName(), node); err != nil {
+		return nil, status.Errorf(codes.Internal, "update node: %v", err)
+	}
+	return &v1.HeartbeatResponse{Accepted: true}, nil
 }

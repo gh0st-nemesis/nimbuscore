@@ -293,6 +293,110 @@ func (*DeletePodResponse) Descriptor() ([]byte, []int) {
 	return file_services_proto_rawDescGZIP(), []int{5}
 }
 
+type HeartbeatRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Capacity      *ResourceList          `protobuf:"bytes,2,opt,name=capacity,proto3" json:"capacity,omitempty"`
+	Allocatable   *ResourceList          `protobuf:"bytes,3,opt,name=allocatable,proto3" json:"allocatable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HeartbeatRequest) Reset() {
+	*x = HeartbeatRequest{}
+	mi := &file_services_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeartbeatRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeartbeatRequest) ProtoMessage() {}
+
+func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_services_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
+func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
+	return file_services_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *HeartbeatRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *HeartbeatRequest) GetCapacity() *ResourceList {
+	if x != nil {
+		return x.Capacity
+	}
+	return nil
+}
+
+func (x *HeartbeatRequest) GetAllocatable() *ResourceList {
+	if x != nil {
+		return x.Allocatable
+	}
+	return nil
+}
+
+type HeartbeatResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HeartbeatResponse) Reset() {
+	*x = HeartbeatResponse{}
+	mi := &file_services_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeartbeatResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeartbeatResponse) ProtoMessage() {}
+
+func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_services_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
+func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
+	return file_services_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *HeartbeatResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
 type CreateNodeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Node          *Node                  `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
@@ -302,7 +406,7 @@ type CreateNodeRequest struct {
 
 func (x *CreateNodeRequest) Reset() {
 	*x = CreateNodeRequest{}
-	mi := &file_services_proto_msgTypes[6]
+	mi := &file_services_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -314,7 +418,7 @@ func (x *CreateNodeRequest) String() string {
 func (*CreateNodeRequest) ProtoMessage() {}
 
 func (x *CreateNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[6]
+	mi := &file_services_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -327,7 +431,7 @@ func (x *CreateNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateNodeRequest.ProtoReflect.Descriptor instead.
 func (*CreateNodeRequest) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{6}
+	return file_services_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CreateNodeRequest) GetNode() *Node {
@@ -346,7 +450,7 @@ type GetNodeRequest struct {
 
 func (x *GetNodeRequest) Reset() {
 	*x = GetNodeRequest{}
-	mi := &file_services_proto_msgTypes[7]
+	mi := &file_services_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -358,7 +462,7 @@ func (x *GetNodeRequest) String() string {
 func (*GetNodeRequest) ProtoMessage() {}
 
 func (x *GetNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[7]
+	mi := &file_services_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -371,7 +475,7 @@ func (x *GetNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNodeRequest.ProtoReflect.Descriptor instead.
 func (*GetNodeRequest) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{7}
+	return file_services_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetNodeRequest) GetName() string {
@@ -389,7 +493,7 @@ type ListNodesRequest struct {
 
 func (x *ListNodesRequest) Reset() {
 	*x = ListNodesRequest{}
-	mi := &file_services_proto_msgTypes[8]
+	mi := &file_services_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -401,7 +505,7 @@ func (x *ListNodesRequest) String() string {
 func (*ListNodesRequest) ProtoMessage() {}
 
 func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[8]
+	mi := &file_services_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -414,7 +518,7 @@ func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNodesRequest.ProtoReflect.Descriptor instead.
 func (*ListNodesRequest) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{8}
+	return file_services_proto_rawDescGZIP(), []int{10}
 }
 
 type ListNodesResponse struct {
@@ -426,7 +530,7 @@ type ListNodesResponse struct {
 
 func (x *ListNodesResponse) Reset() {
 	*x = ListNodesResponse{}
-	mi := &file_services_proto_msgTypes[9]
+	mi := &file_services_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -438,7 +542,7 @@ func (x *ListNodesResponse) String() string {
 func (*ListNodesResponse) ProtoMessage() {}
 
 func (x *ListNodesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[9]
+	mi := &file_services_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -451,7 +555,7 @@ func (x *ListNodesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNodesResponse.ProtoReflect.Descriptor instead.
 func (*ListNodesResponse) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{9}
+	return file_services_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListNodesResponse) GetItems() []*Node {
@@ -470,7 +574,7 @@ type DeleteNodeRequest struct {
 
 func (x *DeleteNodeRequest) Reset() {
 	*x = DeleteNodeRequest{}
-	mi := &file_services_proto_msgTypes[10]
+	mi := &file_services_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -482,7 +586,7 @@ func (x *DeleteNodeRequest) String() string {
 func (*DeleteNodeRequest) ProtoMessage() {}
 
 func (x *DeleteNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[10]
+	mi := &file_services_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -495,7 +599,7 @@ func (x *DeleteNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteNodeRequest.ProtoReflect.Descriptor instead.
 func (*DeleteNodeRequest) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{10}
+	return file_services_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeleteNodeRequest) GetName() string {
@@ -513,7 +617,7 @@ type DeleteNodeResponse struct {
 
 func (x *DeleteNodeResponse) Reset() {
 	*x = DeleteNodeResponse{}
-	mi := &file_services_proto_msgTypes[11]
+	mi := &file_services_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -525,7 +629,7 @@ func (x *DeleteNodeResponse) String() string {
 func (*DeleteNodeResponse) ProtoMessage() {}
 
 func (x *DeleteNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[11]
+	mi := &file_services_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -538,7 +642,7 @@ func (x *DeleteNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteNodeResponse.ProtoReflect.Descriptor instead.
 func (*DeleteNodeResponse) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{11}
+	return file_services_proto_rawDescGZIP(), []int{13}
 }
 
 type CreateDeploymentRequest struct {
@@ -550,7 +654,7 @@ type CreateDeploymentRequest struct {
 
 func (x *CreateDeploymentRequest) Reset() {
 	*x = CreateDeploymentRequest{}
-	mi := &file_services_proto_msgTypes[12]
+	mi := &file_services_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -562,7 +666,7 @@ func (x *CreateDeploymentRequest) String() string {
 func (*CreateDeploymentRequest) ProtoMessage() {}
 
 func (x *CreateDeploymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[12]
+	mi := &file_services_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -575,7 +679,7 @@ func (x *CreateDeploymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateDeploymentRequest.ProtoReflect.Descriptor instead.
 func (*CreateDeploymentRequest) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{12}
+	return file_services_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CreateDeploymentRequest) GetDeployment() *Deployment {
@@ -595,7 +699,7 @@ type GetDeploymentRequest struct {
 
 func (x *GetDeploymentRequest) Reset() {
 	*x = GetDeploymentRequest{}
-	mi := &file_services_proto_msgTypes[13]
+	mi := &file_services_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -607,7 +711,7 @@ func (x *GetDeploymentRequest) String() string {
 func (*GetDeploymentRequest) ProtoMessage() {}
 
 func (x *GetDeploymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[13]
+	mi := &file_services_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -620,7 +724,7 @@ func (x *GetDeploymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDeploymentRequest.ProtoReflect.Descriptor instead.
 func (*GetDeploymentRequest) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{13}
+	return file_services_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetDeploymentRequest) GetNamespace() string {
@@ -646,7 +750,7 @@ type ListDeploymentsRequest struct {
 
 func (x *ListDeploymentsRequest) Reset() {
 	*x = ListDeploymentsRequest{}
-	mi := &file_services_proto_msgTypes[14]
+	mi := &file_services_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -658,7 +762,7 @@ func (x *ListDeploymentsRequest) String() string {
 func (*ListDeploymentsRequest) ProtoMessage() {}
 
 func (x *ListDeploymentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[14]
+	mi := &file_services_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -671,7 +775,7 @@ func (x *ListDeploymentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDeploymentsRequest.ProtoReflect.Descriptor instead.
 func (*ListDeploymentsRequest) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{14}
+	return file_services_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListDeploymentsRequest) GetNamespace() string {
@@ -690,7 +794,7 @@ type ListDeploymentsResponse struct {
 
 func (x *ListDeploymentsResponse) Reset() {
 	*x = ListDeploymentsResponse{}
-	mi := &file_services_proto_msgTypes[15]
+	mi := &file_services_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -702,7 +806,7 @@ func (x *ListDeploymentsResponse) String() string {
 func (*ListDeploymentsResponse) ProtoMessage() {}
 
 func (x *ListDeploymentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[15]
+	mi := &file_services_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -715,7 +819,7 @@ func (x *ListDeploymentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDeploymentsResponse.ProtoReflect.Descriptor instead.
 func (*ListDeploymentsResponse) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{15}
+	return file_services_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListDeploymentsResponse) GetItems() []*Deployment {
@@ -735,7 +839,7 @@ type DeleteDeploymentRequest struct {
 
 func (x *DeleteDeploymentRequest) Reset() {
 	*x = DeleteDeploymentRequest{}
-	mi := &file_services_proto_msgTypes[16]
+	mi := &file_services_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -747,7 +851,7 @@ func (x *DeleteDeploymentRequest) String() string {
 func (*DeleteDeploymentRequest) ProtoMessage() {}
 
 func (x *DeleteDeploymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[16]
+	mi := &file_services_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -760,7 +864,7 @@ func (x *DeleteDeploymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDeploymentRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDeploymentRequest) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{16}
+	return file_services_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DeleteDeploymentRequest) GetNamespace() string {
@@ -785,7 +889,7 @@ type DeleteDeploymentResponse struct {
 
 func (x *DeleteDeploymentResponse) Reset() {
 	*x = DeleteDeploymentResponse{}
-	mi := &file_services_proto_msgTypes[17]
+	mi := &file_services_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -797,7 +901,7 @@ func (x *DeleteDeploymentResponse) String() string {
 func (*DeleteDeploymentResponse) ProtoMessage() {}
 
 func (x *DeleteDeploymentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_services_proto_msgTypes[17]
+	mi := &file_services_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -810,14 +914,14 @@ func (x *DeleteDeploymentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDeploymentResponse.ProtoReflect.Descriptor instead.
 func (*DeleteDeploymentResponse) Descriptor() ([]byte, []int) {
-	return file_services_proto_rawDescGZIP(), []int{17}
+	return file_services_proto_rawDescGZIP(), []int{19}
 }
 
 var File_services_proto protoreflect.FileDescriptor
 
 const file_services_proto_rawDesc = "" +
 	"\n" +
-	"\x0eservices.proto\x12\rnimbuscore.v1\x1a\tpod.proto\x1a\n" +
+	"\x0eservices.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\x1a\tpod.proto\x1a\n" +
 	"node.proto\x1a\x10deployment.proto\"8\n" +
 	"\x10CreatePodRequest\x12$\n" +
 	"\x03pod\x18\x01 \x01(\v2\x12.nimbuscore.v1.PodR\x03pod\"A\n" +
@@ -831,7 +935,13 @@ const file_services_proto_rawDesc = "" +
 	"\x10DeletePodRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"\x13\n" +
-	"\x11DeletePodResponse\"<\n" +
+	"\x11DeletePodResponse\"\x9e\x01\n" +
+	"\x10HeartbeatRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x127\n" +
+	"\bcapacity\x18\x02 \x01(\v2\x1b.nimbuscore.v1.ResourceListR\bcapacity\x12=\n" +
+	"\vallocatable\x18\x03 \x01(\v2\x1b.nimbuscore.v1.ResourceListR\vallocatable\"/\n" +
+	"\x11HeartbeatResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\"<\n" +
 	"\x11CreateNodeRequest\x12'\n" +
 	"\x04node\x18\x01 \x01(\v2\x13.nimbuscore.v1.NodeR\x04node\"$\n" +
 	"\x0eGetNodeRequest\x12\x12\n" +
@@ -862,14 +972,15 @@ const file_services_proto_rawDesc = "" +
 	"\tCreatePod\x12\x1f.nimbuscore.v1.CreatePodRequest\x1a\x12.nimbuscore.v1.Pod\x12:\n" +
 	"\x06GetPod\x12\x1c.nimbuscore.v1.GetPodRequest\x1a\x12.nimbuscore.v1.Pod\x12K\n" +
 	"\bListPods\x12\x1e.nimbuscore.v1.ListPodsRequest\x1a\x1f.nimbuscore.v1.ListPodsResponse\x12N\n" +
-	"\tDeletePod\x12\x1f.nimbuscore.v1.DeletePodRequest\x1a .nimbuscore.v1.DeletePodResponse2\xb4\x02\n" +
+	"\tDeletePod\x12\x1f.nimbuscore.v1.DeletePodRequest\x1a .nimbuscore.v1.DeletePodResponse2\x84\x03\n" +
 	"\vNodeService\x12C\n" +
 	"\n" +
 	"CreateNode\x12 .nimbuscore.v1.CreateNodeRequest\x1a\x13.nimbuscore.v1.Node\x12=\n" +
 	"\aGetNode\x12\x1d.nimbuscore.v1.GetNodeRequest\x1a\x13.nimbuscore.v1.Node\x12N\n" +
 	"\tListNodes\x12\x1f.nimbuscore.v1.ListNodesRequest\x1a .nimbuscore.v1.ListNodesResponse\x12Q\n" +
 	"\n" +
-	"DeleteNode\x12 .nimbuscore.v1.DeleteNodeRequest\x1a!.nimbuscore.v1.DeleteNodeResponse2\x82\x03\n" +
+	"DeleteNode\x12 .nimbuscore.v1.DeleteNodeRequest\x1a!.nimbuscore.v1.DeleteNodeResponse\x12N\n" +
+	"\tHeartbeat\x12\x1f.nimbuscore.v1.HeartbeatRequest\x1a .nimbuscore.v1.HeartbeatResponse2\x82\x03\n" +
 	"\x11DeploymentService\x12U\n" +
 	"\x10CreateDeployment\x12&.nimbuscore.v1.CreateDeploymentRequest\x1a\x19.nimbuscore.v1.Deployment\x12O\n" +
 	"\rGetDeployment\x12#.nimbuscore.v1.GetDeploymentRequest\x1a\x19.nimbuscore.v1.Deployment\x12`\n" +
@@ -888,7 +999,7 @@ func file_services_proto_rawDescGZIP() []byte {
 	return file_services_proto_rawDescData
 }
 
-var file_services_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_services_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_services_proto_goTypes = []any{
 	(*CreatePodRequest)(nil),         // 0: nimbuscore.v1.CreatePodRequest
 	(*GetPodRequest)(nil),            // 1: nimbuscore.v1.GetPodRequest
@@ -896,58 +1007,65 @@ var file_services_proto_goTypes = []any{
 	(*ListPodsResponse)(nil),         // 3: nimbuscore.v1.ListPodsResponse
 	(*DeletePodRequest)(nil),         // 4: nimbuscore.v1.DeletePodRequest
 	(*DeletePodResponse)(nil),        // 5: nimbuscore.v1.DeletePodResponse
-	(*CreateNodeRequest)(nil),        // 6: nimbuscore.v1.CreateNodeRequest
-	(*GetNodeRequest)(nil),           // 7: nimbuscore.v1.GetNodeRequest
-	(*ListNodesRequest)(nil),         // 8: nimbuscore.v1.ListNodesRequest
-	(*ListNodesResponse)(nil),        // 9: nimbuscore.v1.ListNodesResponse
-	(*DeleteNodeRequest)(nil),        // 10: nimbuscore.v1.DeleteNodeRequest
-	(*DeleteNodeResponse)(nil),       // 11: nimbuscore.v1.DeleteNodeResponse
-	(*CreateDeploymentRequest)(nil),  // 12: nimbuscore.v1.CreateDeploymentRequest
-	(*GetDeploymentRequest)(nil),     // 13: nimbuscore.v1.GetDeploymentRequest
-	(*ListDeploymentsRequest)(nil),   // 14: nimbuscore.v1.ListDeploymentsRequest
-	(*ListDeploymentsResponse)(nil),  // 15: nimbuscore.v1.ListDeploymentsResponse
-	(*DeleteDeploymentRequest)(nil),  // 16: nimbuscore.v1.DeleteDeploymentRequest
-	(*DeleteDeploymentResponse)(nil), // 17: nimbuscore.v1.DeleteDeploymentResponse
-	(*Pod)(nil),                      // 18: nimbuscore.v1.Pod
-	(*Node)(nil),                     // 19: nimbuscore.v1.Node
-	(*Deployment)(nil),               // 20: nimbuscore.v1.Deployment
+	(*HeartbeatRequest)(nil),         // 6: nimbuscore.v1.HeartbeatRequest
+	(*HeartbeatResponse)(nil),        // 7: nimbuscore.v1.HeartbeatResponse
+	(*CreateNodeRequest)(nil),        // 8: nimbuscore.v1.CreateNodeRequest
+	(*GetNodeRequest)(nil),           // 9: nimbuscore.v1.GetNodeRequest
+	(*ListNodesRequest)(nil),         // 10: nimbuscore.v1.ListNodesRequest
+	(*ListNodesResponse)(nil),        // 11: nimbuscore.v1.ListNodesResponse
+	(*DeleteNodeRequest)(nil),        // 12: nimbuscore.v1.DeleteNodeRequest
+	(*DeleteNodeResponse)(nil),       // 13: nimbuscore.v1.DeleteNodeResponse
+	(*CreateDeploymentRequest)(nil),  // 14: nimbuscore.v1.CreateDeploymentRequest
+	(*GetDeploymentRequest)(nil),     // 15: nimbuscore.v1.GetDeploymentRequest
+	(*ListDeploymentsRequest)(nil),   // 16: nimbuscore.v1.ListDeploymentsRequest
+	(*ListDeploymentsResponse)(nil),  // 17: nimbuscore.v1.ListDeploymentsResponse
+	(*DeleteDeploymentRequest)(nil),  // 18: nimbuscore.v1.DeleteDeploymentRequest
+	(*DeleteDeploymentResponse)(nil), // 19: nimbuscore.v1.DeleteDeploymentResponse
+	(*Pod)(nil),                      // 20: nimbuscore.v1.Pod
+	(*ResourceList)(nil),             // 21: nimbuscore.v1.ResourceList
+	(*Node)(nil),                     // 22: nimbuscore.v1.Node
+	(*Deployment)(nil),               // 23: nimbuscore.v1.Deployment
 }
 var file_services_proto_depIdxs = []int32{
-	18, // 0: nimbuscore.v1.CreatePodRequest.pod:type_name -> nimbuscore.v1.Pod
-	18, // 1: nimbuscore.v1.ListPodsResponse.items:type_name -> nimbuscore.v1.Pod
-	19, // 2: nimbuscore.v1.CreateNodeRequest.node:type_name -> nimbuscore.v1.Node
-	19, // 3: nimbuscore.v1.ListNodesResponse.items:type_name -> nimbuscore.v1.Node
-	20, // 4: nimbuscore.v1.CreateDeploymentRequest.deployment:type_name -> nimbuscore.v1.Deployment
-	20, // 5: nimbuscore.v1.ListDeploymentsResponse.items:type_name -> nimbuscore.v1.Deployment
-	0,  // 6: nimbuscore.v1.PodService.CreatePod:input_type -> nimbuscore.v1.CreatePodRequest
-	1,  // 7: nimbuscore.v1.PodService.GetPod:input_type -> nimbuscore.v1.GetPodRequest
-	2,  // 8: nimbuscore.v1.PodService.ListPods:input_type -> nimbuscore.v1.ListPodsRequest
-	4,  // 9: nimbuscore.v1.PodService.DeletePod:input_type -> nimbuscore.v1.DeletePodRequest
-	6,  // 10: nimbuscore.v1.NodeService.CreateNode:input_type -> nimbuscore.v1.CreateNodeRequest
-	7,  // 11: nimbuscore.v1.NodeService.GetNode:input_type -> nimbuscore.v1.GetNodeRequest
-	8,  // 12: nimbuscore.v1.NodeService.ListNodes:input_type -> nimbuscore.v1.ListNodesRequest
-	10, // 13: nimbuscore.v1.NodeService.DeleteNode:input_type -> nimbuscore.v1.DeleteNodeRequest
-	12, // 14: nimbuscore.v1.DeploymentService.CreateDeployment:input_type -> nimbuscore.v1.CreateDeploymentRequest
-	13, // 15: nimbuscore.v1.DeploymentService.GetDeployment:input_type -> nimbuscore.v1.GetDeploymentRequest
-	14, // 16: nimbuscore.v1.DeploymentService.ListDeployments:input_type -> nimbuscore.v1.ListDeploymentsRequest
-	16, // 17: nimbuscore.v1.DeploymentService.DeleteDeployment:input_type -> nimbuscore.v1.DeleteDeploymentRequest
-	18, // 18: nimbuscore.v1.PodService.CreatePod:output_type -> nimbuscore.v1.Pod
-	18, // 19: nimbuscore.v1.PodService.GetPod:output_type -> nimbuscore.v1.Pod
-	3,  // 20: nimbuscore.v1.PodService.ListPods:output_type -> nimbuscore.v1.ListPodsResponse
-	5,  // 21: nimbuscore.v1.PodService.DeletePod:output_type -> nimbuscore.v1.DeletePodResponse
-	19, // 22: nimbuscore.v1.NodeService.CreateNode:output_type -> nimbuscore.v1.Node
-	19, // 23: nimbuscore.v1.NodeService.GetNode:output_type -> nimbuscore.v1.Node
-	9,  // 24: nimbuscore.v1.NodeService.ListNodes:output_type -> nimbuscore.v1.ListNodesResponse
-	11, // 25: nimbuscore.v1.NodeService.DeleteNode:output_type -> nimbuscore.v1.DeleteNodeResponse
-	20, // 26: nimbuscore.v1.DeploymentService.CreateDeployment:output_type -> nimbuscore.v1.Deployment
-	20, // 27: nimbuscore.v1.DeploymentService.GetDeployment:output_type -> nimbuscore.v1.Deployment
-	15, // 28: nimbuscore.v1.DeploymentService.ListDeployments:output_type -> nimbuscore.v1.ListDeploymentsResponse
-	17, // 29: nimbuscore.v1.DeploymentService.DeleteDeployment:output_type -> nimbuscore.v1.DeleteDeploymentResponse
-	18, // [18:30] is the sub-list for method output_type
-	6,  // [6:18] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	20, // 0: nimbuscore.v1.CreatePodRequest.pod:type_name -> nimbuscore.v1.Pod
+	20, // 1: nimbuscore.v1.ListPodsResponse.items:type_name -> nimbuscore.v1.Pod
+	21, // 2: nimbuscore.v1.HeartbeatRequest.capacity:type_name -> nimbuscore.v1.ResourceList
+	21, // 3: nimbuscore.v1.HeartbeatRequest.allocatable:type_name -> nimbuscore.v1.ResourceList
+	22, // 4: nimbuscore.v1.CreateNodeRequest.node:type_name -> nimbuscore.v1.Node
+	22, // 5: nimbuscore.v1.ListNodesResponse.items:type_name -> nimbuscore.v1.Node
+	23, // 6: nimbuscore.v1.CreateDeploymentRequest.deployment:type_name -> nimbuscore.v1.Deployment
+	23, // 7: nimbuscore.v1.ListDeploymentsResponse.items:type_name -> nimbuscore.v1.Deployment
+	0,  // 8: nimbuscore.v1.PodService.CreatePod:input_type -> nimbuscore.v1.CreatePodRequest
+	1,  // 9: nimbuscore.v1.PodService.GetPod:input_type -> nimbuscore.v1.GetPodRequest
+	2,  // 10: nimbuscore.v1.PodService.ListPods:input_type -> nimbuscore.v1.ListPodsRequest
+	4,  // 11: nimbuscore.v1.PodService.DeletePod:input_type -> nimbuscore.v1.DeletePodRequest
+	8,  // 12: nimbuscore.v1.NodeService.CreateNode:input_type -> nimbuscore.v1.CreateNodeRequest
+	9,  // 13: nimbuscore.v1.NodeService.GetNode:input_type -> nimbuscore.v1.GetNodeRequest
+	10, // 14: nimbuscore.v1.NodeService.ListNodes:input_type -> nimbuscore.v1.ListNodesRequest
+	12, // 15: nimbuscore.v1.NodeService.DeleteNode:input_type -> nimbuscore.v1.DeleteNodeRequest
+	6,  // 16: nimbuscore.v1.NodeService.Heartbeat:input_type -> nimbuscore.v1.HeartbeatRequest
+	14, // 17: nimbuscore.v1.DeploymentService.CreateDeployment:input_type -> nimbuscore.v1.CreateDeploymentRequest
+	15, // 18: nimbuscore.v1.DeploymentService.GetDeployment:input_type -> nimbuscore.v1.GetDeploymentRequest
+	16, // 19: nimbuscore.v1.DeploymentService.ListDeployments:input_type -> nimbuscore.v1.ListDeploymentsRequest
+	18, // 20: nimbuscore.v1.DeploymentService.DeleteDeployment:input_type -> nimbuscore.v1.DeleteDeploymentRequest
+	20, // 21: nimbuscore.v1.PodService.CreatePod:output_type -> nimbuscore.v1.Pod
+	20, // 22: nimbuscore.v1.PodService.GetPod:output_type -> nimbuscore.v1.Pod
+	3,  // 23: nimbuscore.v1.PodService.ListPods:output_type -> nimbuscore.v1.ListPodsResponse
+	5,  // 24: nimbuscore.v1.PodService.DeletePod:output_type -> nimbuscore.v1.DeletePodResponse
+	22, // 25: nimbuscore.v1.NodeService.CreateNode:output_type -> nimbuscore.v1.Node
+	22, // 26: nimbuscore.v1.NodeService.GetNode:output_type -> nimbuscore.v1.Node
+	11, // 27: nimbuscore.v1.NodeService.ListNodes:output_type -> nimbuscore.v1.ListNodesResponse
+	13, // 28: nimbuscore.v1.NodeService.DeleteNode:output_type -> nimbuscore.v1.DeleteNodeResponse
+	7,  // 29: nimbuscore.v1.NodeService.Heartbeat:output_type -> nimbuscore.v1.HeartbeatResponse
+	23, // 30: nimbuscore.v1.DeploymentService.CreateDeployment:output_type -> nimbuscore.v1.Deployment
+	23, // 31: nimbuscore.v1.DeploymentService.GetDeployment:output_type -> nimbuscore.v1.Deployment
+	17, // 32: nimbuscore.v1.DeploymentService.ListDeployments:output_type -> nimbuscore.v1.ListDeploymentsResponse
+	19, // 33: nimbuscore.v1.DeploymentService.DeleteDeployment:output_type -> nimbuscore.v1.DeleteDeploymentResponse
+	21, // [21:34] is the sub-list for method output_type
+	8,  // [8:21] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_services_proto_init() }
@@ -955,6 +1073,7 @@ func file_services_proto_init() {
 	if File_services_proto != nil {
 		return
 	}
+	file_common_proto_init()
 	file_pod_proto_init()
 	file_node_proto_init()
 	file_deployment_proto_init()
@@ -964,7 +1083,7 @@ func file_services_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_services_proto_rawDesc), len(file_services_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

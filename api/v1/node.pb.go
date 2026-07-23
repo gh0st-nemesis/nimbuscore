@@ -68,13 +68,17 @@ func (x *NodeSpec) GetUnschedulable() bool {
 }
 
 type NodeStatus struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Capacity      *ResourceList          `protobuf:"bytes,1,opt,name=capacity,proto3" json:"capacity,omitempty"`
-	Allocatable   *ResourceList          `protobuf:"bytes,2,opt,name=allocatable,proto3" json:"allocatable,omitempty"`
-	Ready         bool                   `protobuf:"varint,3,opt,name=ready,proto3" json:"ready,omitempty"`
-	Conditions    []*Condition           `protobuf:"bytes,4,rep,name=conditions,proto3" json:"conditions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Capacity    *ResourceList          `protobuf:"bytes,1,opt,name=capacity,proto3" json:"capacity,omitempty"`
+	Allocatable *ResourceList          `protobuf:"bytes,2,opt,name=allocatable,proto3" json:"allocatable,omitempty"`
+	Ready       bool                   `protobuf:"varint,3,opt,name=ready,proto3" json:"ready,omitempty"`
+	Conditions  []*Condition           `protobuf:"bytes,4,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	// last_heartbeat_unix is set by NodeService.Heartbeat; the
+	// node-health-controller (design doc section 08, phase 2) marks the
+	// node not-ready once this goes stale.
+	LastHeartbeatUnix int64 `protobuf:"varint,5,opt,name=last_heartbeat_unix,json=lastHeartbeatUnix,proto3" json:"last_heartbeat_unix,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *NodeStatus) Reset() {
@@ -133,6 +137,13 @@ func (x *NodeStatus) GetConditions() []*Condition {
 		return x.Conditions
 	}
 	return nil
+}
+
+func (x *NodeStatus) GetLastHeartbeatUnix() int64 {
+	if x != nil {
+		return x.LastHeartbeatUnix
+	}
+	return 0
 }
 
 type Node struct {
@@ -202,7 +213,7 @@ const file_node_proto_rawDesc = "" +
 	"\n" +
 	"node.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\"0\n" +
 	"\bNodeSpec\x12$\n" +
-	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\xd4\x01\n" +
+	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\x84\x02\n" +
 	"\n" +
 	"NodeStatus\x127\n" +
 	"\bcapacity\x18\x01 \x01(\v2\x1b.nimbuscore.v1.ResourceListR\bcapacity\x12=\n" +
@@ -210,7 +221,8 @@ const file_node_proto_rawDesc = "" +
 	"\x05ready\x18\x03 \x01(\bR\x05ready\x128\n" +
 	"\n" +
 	"conditions\x18\x04 \x03(\v2\x18.nimbuscore.v1.ConditionR\n" +
-	"conditions\"\x9d\x01\n" +
+	"conditions\x12.\n" +
+	"\x13last_heartbeat_unix\x18\x05 \x01(\x03R\x11lastHeartbeatUnix\"\x9d\x01\n" +
 	"\x04Node\x125\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x19.nimbuscore.v1.ObjectMetaR\bmetadata\x12+\n" +
 	"\x04spec\x18\x02 \x01(\v2\x17.nimbuscore.v1.NodeSpecR\x04spec\x121\n" +

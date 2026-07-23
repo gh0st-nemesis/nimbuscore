@@ -247,6 +247,7 @@ const (
 	NodeService_GetNode_FullMethodName    = "/nimbuscore.v1.NodeService/GetNode"
 	NodeService_ListNodes_FullMethodName  = "/nimbuscore.v1.NodeService/ListNodes"
 	NodeService_DeleteNode_FullMethodName = "/nimbuscore.v1.NodeService/DeleteNode"
+	NodeService_Heartbeat_FullMethodName  = "/nimbuscore.v1.NodeService/Heartbeat"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -257,6 +258,10 @@ type NodeServiceClient interface {
 	GetNode(ctx context.Context, in *GetNodeRequest, opts ...grpc.CallOption) (*Node, error)
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
 	DeleteNode(ctx context.Context, in *DeleteNodeRequest, opts ...grpc.CallOption) (*DeleteNodeResponse, error)
+	// Heartbeat is called periodically by the agent (design doc section
+	// 08, phase 2: "health checks et détection de nœud mort"). Missing a
+	// few of these is what flips a Node's status.ready to false.
+	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 }
 
 type nodeServiceClient struct {
@@ -307,6 +312,16 @@ func (c *nodeServiceClient) DeleteNode(ctx context.Context, in *DeleteNodeReques
 	return out, nil
 }
 
+func (c *nodeServiceClient) Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HeartbeatResponse)
+	err := c.cc.Invoke(ctx, NodeService_Heartbeat_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodeServiceServer is the server API for NodeService service.
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
@@ -315,6 +330,10 @@ type NodeServiceServer interface {
 	GetNode(context.Context, *GetNodeRequest) (*Node, error)
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
 	DeleteNode(context.Context, *DeleteNodeRequest) (*DeleteNodeResponse, error)
+	// Heartbeat is called periodically by the agent (design doc section
+	// 08, phase 2: "health checks et détection de nœud mort"). Missing a
+	// few of these is what flips a Node's status.ready to false.
+	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
 }
 
@@ -336,6 +355,9 @@ func (UnimplementedNodeServiceServer) ListNodes(context.Context, *ListNodesReque
 }
 func (UnimplementedNodeServiceServer) DeleteNode(context.Context, *DeleteNodeRequest) (*DeleteNodeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteNode not implemented")
+}
+func (UnimplementedNodeServiceServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Heartbeat not implemented")
 }
 func (UnimplementedNodeServiceServer) mustEmbedUnimplementedNodeServiceServer() {}
 func (UnimplementedNodeServiceServer) testEmbeddedByValue()                     {}
@@ -430,6 +452,24 @@ func _NodeService_DeleteNode_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_Heartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HeartbeatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).Heartbeat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_Heartbeat_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).Heartbeat(ctx, req.(*HeartbeatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NodeService_ServiceDesc is the grpc.ServiceDesc for NodeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -452,6 +492,10 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteNode",
 			Handler:    _NodeService_DeleteNode_Handler,
+		},
+		{
+			MethodName: "Heartbeat",
+			Handler:    _NodeService_Heartbeat_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

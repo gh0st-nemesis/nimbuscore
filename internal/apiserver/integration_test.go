@@ -14,6 +14,7 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/apiserver"
 	"github.com/gh0st-nemesis/nimbuscore/internal/controller"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
+	"github.com/gh0st-nemesis/nimbuscore/internal/scheduler"
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
 )
 
@@ -29,6 +30,7 @@ func TestDeploymentCreateReconcilesToPods(t *testing.T) {
 	grpcServer := grpc.NewServer()
 	v1.RegisterDeploymentServiceServer(grpcServer, apiserver.NewDeploymentService(st))
 	v1.RegisterPodServiceServer(grpcServer, apiserver.NewPodService(st))
+	v1.RegisterNodeServiceServer(grpcServer, apiserver.NewNodeService(st))
 
 	lis := bufconn.Listen(1 << 20)
 	go grpcServer.Serve(lis) //nolint:errcheck // Stop() below always ends this with an expected error
@@ -46,16 +48,30 @@ func TestDeploymentCreateReconcilesToPods(t *testing.T) {
 
 	deployments := registry.New(st, "deployments", func() *v1.Deployment { return &v1.Deployment{} })
 	pods := registry.New(st, "pods", func() *v1.Pod { return &v1.Pod{} })
+	nodes := registry.New(st, "nodes", func() *v1.Node { return &v1.Node{} })
 
 	mgr := controller.NewManager()
-	mgr.Register(controller.NewDeploymentReconciler(deployments, pods, 30*time.Millisecond))
+	mgr.Register(controller.NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 30*time.Millisecond))
 	go mgr.Run(t.Context())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	nodeClient := v1.NewNodeServiceClient(conn)
 	deploymentClient := v1.NewDeploymentServiceClient(conn)
 	podClient := v1.NewPodServiceClient(conn)
+
+	if _, err := nodeClient.CreateNode(ctx, &v1.CreateNodeRequest{
+		Node: &v1.Node{
+			Metadata: &v1.ObjectMeta{Name: "node-1"},
+			Status: &v1.NodeStatus{
+				Ready:       true,
+				Allocatable: &v1.ResourceList{CpuMillis: 4000, MemoryBytes: 4 << 30},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("CreateNode: %v", err)
+	}
 
 	_, err = deploymentClient.CreateDeployment(ctx, &v1.CreateDeploymentRequest{
 		Deployment: &v1.Deployment{
@@ -77,12 +93,21 @@ func TestDeploymentCreateReconcilesToPods(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListPods: %v", err)
 		}
-		if len(resp.GetItems()) == 2 {
+		if len(resp.GetItems()) == 2 && allScheduled(resp.GetItems()) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for 2 pods, got %d", len(resp.GetItems()))
+			t.Fatalf("timed out waiting for 2 scheduled pods, got %d", len(resp.GetItems()))
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+func allScheduled(pods []*v1.Pod) bool {
+	for _, p := range pods {
+		if p.GetSpec().GetNodeName() == "" {
+			return false
+		}
+	}
+	return true
 }

@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+// IdentityService is the bootstrap enrollment endpoint (design doc
+// section 05, "identités éphémères"): any node or control-plane replica
+// calls RequestSVID exactly once, presenting a shared join token, to
+// obtain its first short-lived SVID and the cluster's trust bundle.
+// Every other RPC in this API requires a client certificate obtained
+// this way — RequestSVID is the one exception, reachable without one.
+service IdentityService {
+  rpc RequestSVID(RequestSVIDRequest) returns (RequestSVIDResponse);
+}
+
+enum SVIDRole {
+  SVID_ROLE_UNSPECIFIED = 0;
+  SVID_ROLE_NODE = 1;
+  SVID_ROLE_CONTROL_PLANE = 2;
+}
+
+message RequestSVIDRequest {
+  string join_token = 1;
+  // csr_der is a PKCS#10 CertificateRequest, DER-encoded, over an
+  // ECDSA P-256 key generated locally — the private key never leaves
+  // the requester.
+  bytes csr_der = 2;
+  string node_name = 3;
+  SVIDRole role = 4;
+}
+
+message RequestSVIDResponse {
+  bytes cert_der = 1;
+  bytes trust_bundle_der = 2;
+}
+
+// AdminService is restricted to control-plane replicas: the
+// AuthInterceptor only grants access to callers whose SPIFFE ID path
+// starts with "control-plane/". JoinRaft lets a newly enrolled replica
+// add itself as a Raft voter on the current leader (design doc section
+// 08, phase 2: "Raft multi-nœuds, tolérance de panne").
+service AdminService {
+  rpc JoinRaft(JoinRaftRequest) returns (JoinRaftResponse);
+}
+
+message JoinRaftRequest {
+  string node_id = 1;
+  string raft_addr = 2;
+}
+
+message JoinRaftResponse {}
