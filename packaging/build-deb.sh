@@ -4,46 +4,64 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VERSION="${1:-0.1.0}"
-ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
+ARCH="${DEB_ARCH:-amd64}"
+GOARCH_TARGET="${GOARCH_TARGET:-amd64}"
 
-if ! command -v dpkg-deb >/dev/null 2>&1; then
-  echo "error: dpkg-deb not found — this must run on Debian/Ubuntu" >&2
-  exit 1
-fi
-if ! command -v go >/dev/null 2>&1; then
-  echo "error: go not found — building the .deb still requires Go to compile the binaries" >&2
-  exit 1
-fi
+for tool in ar tar gzip go; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "error: required tool '$tool' not found on PATH" >&2
+    exit 1
+  fi
+done
 
-pkg_root="$(mktemp -d)"
-trap 'rm -rf "$pkg_root"' EXIT
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
 
-mkdir -p "$pkg_root/DEBIAN" "$pkg_root/usr/bin" "$pkg_root/etc/nimbuscore" "$pkg_root/lib/systemd/system"
+data_dir="$work_dir/data"
+control_dir="$work_dir/control"
+mkdir -p "$data_dir/usr/bin" "$data_dir/etc/nimbuscore" "$data_dir/lib/systemd/system" "$control_dir"
 
-echo "==> building binaries (go, ${VERSION}, ${ARCH})"
+echo "==> cross-compiling linux/${GOARCH_TARGET} binaries (go, version ${VERSION})"
 (
   cd "$REPO_ROOT"
-  go build -o "$pkg_root/usr/bin/nimbusctl" ./cmd/nimbusctl
-  go build -o "$pkg_root/usr/bin/nimbus-apiserver" ./cmd/nimbus-apiserver
-  go build -o "$pkg_root/usr/bin/nimbus-agent" ./cmd/nimbus-agent
+  GOOS=linux GOARCH="$GOARCH_TARGET" CGO_ENABLED=0 go build -o "$data_dir/usr/bin/nimbusctl" ./cmd/nimbusctl
+  GOOS=linux GOARCH="$GOARCH_TARGET" CGO_ENABLED=0 go build -o "$data_dir/usr/bin/nimbus-apiserver" ./cmd/nimbus-apiserver
+  GOOS=linux GOARCH="$GOARCH_TARGET" CGO_ENABLED=0 go build -o "$data_dir/usr/bin/nimbus-agent" ./cmd/nimbus-agent
 )
-chmod 0755 "$pkg_root"/usr/bin/*
 
-install -m 0644 "$SCRIPT_DIR/nimbus-apiserver.service" "$pkg_root/lib/systemd/system/"
-install -m 0644 "$SCRIPT_DIR/nimbus-agent.service" "$pkg_root/lib/systemd/system/"
-install -m 0644 "$SCRIPT_DIR/apiserver.env" "$pkg_root/etc/nimbuscore/"
-install -m 0644 "$SCRIPT_DIR/agent.env" "$pkg_root/etc/nimbuscore/"
+cp "$SCRIPT_DIR/nimbus-apiserver.service" "$data_dir/lib/systemd/system/"
+cp "$SCRIPT_DIR/nimbus-agent.service" "$data_dir/lib/systemd/system/"
+cp "$SCRIPT_DIR/apiserver.env" "$data_dir/etc/nimbuscore/"
+cp "$SCRIPT_DIR/agent.env" "$data_dir/etc/nimbuscore/"
 
-install -m 0755 "$SCRIPT_DIR/postinst" "$pkg_root/DEBIAN/postinst"
-install -m 0755 "$SCRIPT_DIR/postrm" "$pkg_root/DEBIAN/postrm"
-install -m 0644 "$SCRIPT_DIR/conffiles" "$pkg_root/DEBIAN/conffiles"
-
-installed_size="$(du -sk --exclude=DEBIAN "$pkg_root" | cut -f1)"
+installed_size="$(du -sk "$data_dir" | cut -f1)"
 
 sed -e "s/@VERSION@/$VERSION/" -e "s/@ARCH@/$ARCH/" -e "s/@INSTALLED_SIZE@/$installed_size/" \
-  "$SCRIPT_DIR/control.tmpl" > "$pkg_root/DEBIAN/control"
+  "$SCRIPT_DIR/control.tmpl" > "$control_dir/control"
+cp "$SCRIPT_DIR/postinst" "$control_dir/postinst"
+cp "$SCRIPT_DIR/postrm" "$control_dir/postrm"
+cp "$SCRIPT_DIR/conffiles" "$control_dir/conffiles"
+
+echo "2.0" > "$work_dir/debian-binary"
+
+control_tar="$work_dir/control.tar"
+tar --owner=0 --group=0 --numeric-owner --mode=0755 --no-recursion -cf "$control_tar" -C "$control_dir" \
+  ./postinst ./postrm
+tar --owner=0 --group=0 --numeric-owner --mode=0644 --no-recursion -rf "$control_tar" -C "$control_dir" \
+  ./control ./conffiles
+gzip -n -f "$control_tar"
+
+data_tar="$work_dir/data.tar"
+tar --owner=0 --group=0 --numeric-owner --mode=0755 --no-recursion -cf "$data_tar" -C "$data_dir" \
+  ./usr ./usr/bin ./usr/bin/nimbusctl ./usr/bin/nimbus-apiserver ./usr/bin/nimbus-agent \
+  ./etc ./etc/nimbuscore ./lib ./lib/systemd ./lib/systemd/system
+tar --owner=0 --group=0 --numeric-owner --mode=0644 --no-recursion -rf "$data_tar" -C "$data_dir" \
+  ./etc/nimbuscore/apiserver.env ./etc/nimbuscore/agent.env \
+  ./lib/systemd/system/nimbus-apiserver.service ./lib/systemd/system/nimbus-agent.service
+gzip -n -f "$data_tar"
 
 out="$REPO_ROOT/nimbuscore_${VERSION}_${ARCH}.deb"
-dpkg-deb --build --root-owner-group "$pkg_root" "$out"
+rm -f "$out"
+( cd "$work_dir" && ar rc "$out" debian-binary control.tar.gz data.tar.gz )
 
 echo "==> built $out"
