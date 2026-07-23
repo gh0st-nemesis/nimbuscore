@@ -202,12 +202,26 @@ réévacués sur un nœud sain.
 ### 5. Piloter le cluster avec nimbusctl (comme kubectl)
 
 `nimbusctl` s'enrôle comme identité `CLIENT` (SPIFFE/mTLS) à chaque invocation — il a donc besoin de
-l'adresse du control plane et du join token, une fois pour toute la session shell :
+l'adresse du control plane et du join token. Trois façons de les fournir, par ordre de priorité :
+un flag explicite (`--control-plane-addr`/`--join-token`), une variable d'environnement, puis un
+fichier de config persistant façon `~/.kube/config` :
+
+```bash
+# une seule fois, plutôt que d'exporter les variables à chaque session shell
+nimbusctl config set-context --control-plane-addr=127.0.0.1:7443 --join-token=devtoken
+nimbusctl config view
+```
+
+Ou, comme avant, via l'environnement (utile en CI/scripts) :
 
 ```bash
 export NIMBUS_API_ADDR=127.0.0.1:7443
 export NIMBUS_JOIN_TOKEN=devtoken
 ```
+
+Le fichier est écrit dans `~/.nimbus/config.json` (mode `0600`, JSON en clair — le join token
+partagé n'est pas un secret long terme, seulement ce qu'il faut pour obtenir un SVID court terme ;
+ne pas y stocker un join token de production sans en avoir conscience).
 
 Créer un Pod ou un Deployment sans écrire de manifeste, façon `kubectl run` :
 
