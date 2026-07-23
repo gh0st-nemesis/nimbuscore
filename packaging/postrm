@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "purge" ]; then
+  if [ -d /run/systemd/system ]; then
+    systemctl disable --now nimbus-apiserver >/dev/null 2>&1 || true
+    systemctl disable --now nimbus-agent >/dev/null 2>&1 || true
+  fi
+  deluser nimbuscore >/dev/null 2>&1 || true
+  delgroup nimbuscore >/dev/null 2>&1 || true
+  rm -rf /var/lib/nimbuscore
+fi
+
+if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload || true
+fi
+
+exit 0

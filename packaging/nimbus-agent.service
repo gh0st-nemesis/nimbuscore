@@ -1,0 +1,18 @@
+[Unit]
+Description=NimbusCore node agent
+After=network-online.target nimbus-apiserver.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nimbuscore
+Group=nimbuscore
+EnvironmentFile=-/etc/nimbuscore/agent.env
+WorkingDirectory=/var/lib/nimbuscore/agent
+ExecStart=/usr/bin/nimbus-agent $NIMBUS_AGENT_ARGS
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

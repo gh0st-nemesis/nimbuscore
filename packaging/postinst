@@ -1,0 +1,34 @@
+#!/bin/sh
+set -e
+
+if ! getent group nimbuscore >/dev/null; then
+  addgroup --system nimbuscore
+fi
+
+if ! getent passwd nimbuscore >/dev/null; then
+  adduser --system --no-create-home --ingroup nimbuscore --shell /usr/sbin/nologin nimbuscore
+fi
+
+mkdir -p /var/lib/nimbuscore/apiserver /var/lib/nimbuscore/agent
+chown -R nimbuscore:nimbuscore /var/lib/nimbuscore
+chmod 0750 /var/lib/nimbuscore/apiserver /var/lib/nimbuscore/agent
+
+if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload || true
+fi
+
+cat <<'MSG'
+nimbuscore installed.
+
+Edit /etc/nimbuscore/apiserver.env and /etc/nimbuscore/agent.env (join
+token, node name, control-plane address), then:
+
+  systemctl enable --now nimbus-apiserver
+  systemctl enable --now nimbus-agent
+
+The default apiserver.env bootstraps a brand-new single-replica cluster
+with image signature verification disabled — fine for local testing,
+not for production. See README.md for a hardened configuration.
+MSG
+
+exit 0

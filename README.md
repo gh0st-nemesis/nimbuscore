@@ -163,6 +163,38 @@ Compile `nimbusctl`, `nimbus-apiserver` et `nimbus-agent`, puis les installe dan
 (`PREFIX=~/.local/bin ./install.sh` pour changer la destination). Sous Windows, utiliser `go build
 -o <nom>.exe ./cmd/<binaire>` directement.
 
+**Paquet `.deb` + services systemd** (Debian/Ubuntu) — pour une installation façon paquet système
+plutôt qu'un binaire copié à la main, avec `nimbus-apiserver`/`nimbus-agent` gérés par systemd
+(démarrage auto, `systemctl status`, logs via `journalctl`) :
+
+```bash
+./packaging/build-deb.sh          # produit nimbuscore_0.1.0_amd64.deb à la racine du repo
+sudo dpkg -i nimbuscore_0.1.0_amd64.deb
+```
+
+Le paquet installe les 3 binaires dans `/usr/bin`, un utilisateur système dédié `nimbuscore` (sans
+shell, sans home), les unités `nimbus-apiserver.service`/`nimbus-agent.service`, et des fichiers de
+config éditables dans `/etc/nimbuscore/{apiserver,agent}.env` (déclarés `conffiles` — un
+`apt upgrade` ultérieur ne les écrasera pas silencieusement). Après installation :
+
+```bash
+sudo nano /etc/nimbuscore/apiserver.env   # join-token, etc. — le défaut bootstrap un cluster de test
+sudo nano /etc/nimbuscore/agent.env       # node-name, control-plane-addr, join-token
+sudo systemctl enable --now nimbus-apiserver
+sudo systemctl enable --now nimbus-agent
+journalctl -u nimbus-apiserver -f
+```
+
+> **Limite connue** : les deux services tournent sous l'utilisateur système `nimbuscore` avec
+> `NoNewPrivileges=true` — cohérent avec le fait que l'agent exécute déjà les conteneurs comme de
+> simples processus OS (pas d'isolation cgroups/namespaces, cf. plus bas) : un `Container.command`
+> qui exigerait des privilèges élevés à l'intérieur du « conteneur » échouera sous ce service, tout
+> comme il échouerait déjà sans ce paquet. Le fichier `apiserver.env` par défaut bootstrap un cluster
+> mono-réplica avec vérification de signature d'image désactivée — à durcir avant tout usage au-delà
+> du test local (voir la section RBAC/signature plus bas). Le script `build-deb.sh` doit être exécuté
+> sur une machine Debian/Ubuntu (il appelle `dpkg-deb`) ; il compile les binaires à la volée, il n'y a
+> pas encore de release GitHub avec des `.deb` pré-construits.
+
 ### 1. Générer une clé de signature d'image et signer une image
 
 ```bash

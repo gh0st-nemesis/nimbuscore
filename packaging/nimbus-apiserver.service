@@ -1,0 +1,19 @@
+[Unit]
+Description=NimbusCore control-plane API server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nimbuscore
+Group=nimbuscore
+EnvironmentFile=-/etc/nimbuscore/apiserver.env
+WorkingDirectory=/var/lib/nimbuscore/apiserver
+ExecStart=/usr/bin/nimbus-apiserver $NIMBUS_APISERVER_ARGS
+Restart=on-failure
+RestartSec=5
+AmbientCapabilities=
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+Package: nimbuscore
+Version: @VERSION@
+Section: admin
+Priority: optional
+Architecture: @ARCH@
+Installed-Size: @INSTALLED_SIZE@
+Maintainer: gr1m <bl4ck4mi@gmail.com>
+Description: NimbusCore container orchestrator (apiserver, agent, CLI)
+ From-scratch, Kubernetes-inspired container orchestrator: Raft consensus,
+ mTLS via SPIFFE, non-bypassable admission control, and a kubectl-style
+ CLI (nimbusctl). Installs nimbus-apiserver and nimbus-agent as systemd
+ services, plus the nimbusctl client, all under /usr/bin.
