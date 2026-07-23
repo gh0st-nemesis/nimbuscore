@@ -199,6 +199,41 @@ go run ./cmd/nimbus-apiserver -node-id=node-2 -api-addr=127.0.0.1:7444 -raft-add
 Couper `nimbus-agent` : après ~15s sans heartbeat, le nœud passe `not-ready` et ses Pods sont
 réévacués sur un nœud sain.
 
+### 5. Piloter le cluster avec nimbusctl (comme kubectl)
+
+`nimbusctl` s'enrôle comme identité `CLIENT` (SPIFFE/mTLS) à chaque invocation — il a donc besoin de
+l'adresse du control plane et du join token, une fois pour toute la session shell :
+
+```bash
+export NIMBUS_API_ADDR=127.0.0.1:7443
+export NIMBUS_JOIN_TOKEN=devtoken
+```
+
+Créer un Pod ou un Deployment sans écrire de manifeste, façon `kubectl run` :
+
+```bash
+nimbusctl run web --image=nginx:v1 -- sleep 3600     # un seul Pod
+nimbusctl run api --image=alpine:v1 --replicas=3 -- sleep 3600   # un Deployment à 3 réplicas
+```
+
+> Sans `-- <commande>`, `nimbusctl run` prévient : l'agent exécute les conteneurs comme de vrais
+> processus OS (pas encore de runtime CRI/OCI, cf. limites connues plus bas), donc sans commande il
+> n'y a rien à exécuter — `--image` sert à la vérification de signature, pas à un vrai pull d'image.
+
+Ou avec un manifeste JSON (`kind: Pod|Deployment|Node`), façon `kubectl apply -f` :
+
+```bash
+nimbusctl apply -f deployment.json
+```
+
+Lister les ressources, façon `kubectl get` :
+
+```bash
+nimbusctl get pods -n default
+nimbusctl get deployments
+nimbusctl get nodes
+```
+
 ### Self-healing et autoscaling (Phase 5)
 
 Un `Container.command` (ex. `["powershell.exe", "-Command", "Start-Sleep -Seconds 60"]` sur Windows,

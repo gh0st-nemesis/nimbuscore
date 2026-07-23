@@ -28,6 +28,7 @@ func main() {
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newGetCmd())
 	root.AddCommand(newApplyCmd())
+	root.AddCommand(newRunCmd())
 	root.AddCommand(newGenerateKeyCmd())
 	root.AddCommand(newSignImageCmd())
 
