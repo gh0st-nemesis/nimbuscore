@@ -33,7 +33,7 @@ func (svc *podService) CreatePod(ctx context.Context, req *v1.CreatePodRequest) 
 		return nil, status.Error(codes.InvalidArgument, "pod.metadata.name is required")
 	}
 
-	if err := svc.admission.Admit(ctx, &admission.Request{Namespace: meta.GetNamespace(), Spec: pod.GetSpec(), Replicas: 1}); err != nil {
+	if err := svc.admission.Admit(ctx, &admission.Request{Namespace: meta.GetNamespace(), Labels: meta.GetLabels(), Spec: pod.GetSpec(), Replicas: 1}); err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
 	}
 

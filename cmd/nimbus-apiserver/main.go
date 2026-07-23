@@ -24,6 +24,7 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/csi/hostpath"
 	"github.com/gh0st-nemesis/nimbuscore/internal/identity"
 	"github.com/gh0st-nemesis/nimbuscore/internal/imagesign"
+	"github.com/gh0st-nemesis/nimbuscore/internal/policy"
 	"github.com/gh0st-nemesis/nimbuscore/internal/rbac"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
 	"github.com/gh0st-nemesis/nimbuscore/internal/scheduler"
@@ -54,6 +55,7 @@ func main() {
 	otelExporter := fs.String("otel-exporter", "none", "OpenTelemetry exporter: none, stdout, or otlp")
 	otlpEndpoint := fs.String("otlp-endpoint", "127.0.0.1:4317", "OTLP gRPC collector endpoint (when -otel-exporter=otlp)")
 	csiHostpathDir := fs.String("csi-hostpath-dir", "./data/volumes", "directory backing the built-in hostpath CSI driver")
+	secretKeyRotationInterval := fs.Duration("secret-key-rotation-interval", 24*time.Hour, "how often the store's encryption key is rotated")
 	fs.Parse(os.Args[1:])
 
 	if *joinToken == "" {
@@ -117,11 +119,18 @@ func main() {
 	deployments := registry.New(raftStore, "deployments", func() *v1.Deployment { return &v1.Deployment{} })
 	pods := registry.New(raftStore, "pods", func() *v1.Pod { return &v1.Pod{} })
 
+	policyEngine, err := policy.NewEngine()
+	if err != nil {
+		log.Fatalf("apiserver: policy engine: %v", err)
+	}
+	policies := registry.New(raftStore, "policies", func() *v1.Policy { return &v1.Policy{} })
+
 	imageVerifier := loadImageVerifier(*imageTrustFile, *imagePubKeyFile, *insecureSkipImageVerification)
 	admissionChain := admission.NewChain(
 		admission.NewSecurityContextPolicy(splitCSV(*allowedCapabilities)...),
 		admission.NewImageSignaturePolicy(imageVerifier),
 		admission.NewQuotaPolicy(pods, &v1.ResourceList{CpuMillis: *cpuQuotaMillis, MemoryBytes: *memQuotaBytes}),
+		admission.NewPolicyValidator(policyEngine, policies),
 	)
 
 	csiDriver, err := hostpath.New(*nodeID, *csiHostpathDir)
@@ -135,6 +144,8 @@ func main() {
 	v1.RegisterAdminServiceServer(srv.GRPCServer(), apiserver.NewAdminService(raftStore))
 	v1.RegisterVolumeServiceServer(srv.GRPCServer(), apiserver.NewVolumeService(raftStore, csiDriver))
 	v1.RegisterNetworkPolicyServiceServer(srv.GRPCServer(), apiserver.NewNetworkPolicyService(raftStore))
+	v1.RegisterPolicyServiceServer(srv.GRPCServer(), apiserver.NewPolicyService(raftStore, policyEngine))
+	v1.RegisterSecretServiceServer(srv.GRPCServer(), apiserver.NewSecretService(raftStore))
 	if ca != nil {
 		v1.RegisterIdentityServiceServer(srv.GRPCServer(), apiserver.NewIdentityService(ca, *joinToken, identity.DefaultSVIDTTL, dek))
 	}
@@ -143,6 +154,7 @@ func main() {
 	mgr.Register(controller.NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 0))
 	mgr.Register(controller.NewNodeHealthReconciler(nodes, 0, 0))
 	mgr.Register(controller.NewHorizontalAutoscaler(deployments, pods, 0))
+	mgr.Register(controller.NewKeyRotationReconciler(raftStore, *secretKeyRotationInterval))
 	go controller.RunWhileLeader(ctx, raftStore, mgr, 0)
 
 	if err := srv.Serve(ctx); err != nil {

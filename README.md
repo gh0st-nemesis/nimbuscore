@@ -11,7 +11,7 @@
 
 <p align="center">
   <img alt="Go" src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white">
-  <img alt="Status" src="https://img.shields.io/badge/status-Phase%205-orange">
+  <img alt="Status" src="https://img.shields.io/badge/status-Phase%206-orange">
   <img alt="License" src="https://img.shields.io/badge/license-unset-lightgrey">
 </p>
 
@@ -25,12 +25,14 @@ et overhead d'un control plane généraliste. Le design complet (architecture, s
 phases, stack technique) est dans
 [`NimbusCore-document-de-conception.pdf`](./NimbusCore-document-de-conception.pdf).
 
-Ce dépôt contient le code : **Phases 1 à 5** de la roadmap (section 08) sont implémentées — un cluster
+Ce dépôt contient le code : **Phases 1 à 6** de la roadmap (section 08) sont implémentées — un cluster
 réel, multi-processus, avec consensus Raft, identités mTLS, admission control non contournable, RBAC
 deny-by-default, chiffrement au repos, stockage persistant via CSI, politiques réseau deny-by-default,
-télémétrie OpenTelemetry native, et — nouveau en Phase 5 — un agent qui exécute réellement des
-processus, redémarre ceux qui crashent, évince/replace ceux en échec terminal, et un autoscaler
-horizontal qui ajuste le nombre de réplicas sur la mémoire réellement observée.
+télémétrie OpenTelemetry native, un agent qui exécute réellement des processus (redémarre ceux qui
+crashent, évince/remplace ceux en échec terminal), un autoscaler horizontal sur mémoire observée, et —
+nouveau en Phase 6 — un moteur de policy natif en CEL (mêmes primitives que l'admission control, sans
+langage séparé façon Rego) et un coffre-fort de secrets dont la clé de chiffrement se fait tourner
+automatiquement, sans jamais interrompre l'accès aux données.
 
 ## Architecture
 
@@ -40,16 +42,20 @@ horizontal qui ajuste le nombre de réplicas sur la mémoire réellement observ�
    │  gRPC (mTLS SPIFFE) + AuthInterceptor (RBAC) + otelgrpc (traces)   │
    │  ├─ IdentityService / AdminService                                 │
    │  ├─ PodService / DeploymentService ──► Admission Chain             │
-   │  │        ├─ SecurityContextPolicy / ImageSignaturePolicy / Quota  │
+   │  │  ├─ SecurityContextPolicy / ImageSignaturePolicy / Quota        │
+   │  │  └─ PolicyValidator ──► internal/policy (moteur CEL natif)      │
    │  ├─ NodeService                                                    │
    │  ├─ VolumeService ──► driver CSI hostpath (Controller/Node/Identity)│
-   │  └─ NetworkPolicyService ──► internal/netpolicy (moteur de policy) │
+   │  ├─ NetworkPolicyService ──► internal/netpolicy (moteur de policy) │
+   │  ├─ PolicyService / SecretService (coffre-fort chiffré au repos)   │
    │                                                                    │
    │  Controller Manager (actif sur le leader Raft uniquement)         │
    │  ├─ DeploymentReconciler   (désiré vs. observé + scheduler +       │
    │  │    éviction nœud mort/pod en échec terminal)                   │
    │  ├─ NodeHealthReconciler   (heartbeat expiré → not-ready)          │
-   │  └─ HorizontalAutoscaler   (replicas ajustés sur mémoire observée) │
+   │  ├─ HorizontalAutoscaler   (replicas ajustés sur mémoire observée) │
+   │  └─ KeyRotationReconciler  (fait tourner la clé AES-256-GCM,       │
+   │       re-chiffre tout, sans interruption de service)              │
    │              │                                                    │
    │              └──────────► RaftStore (BoltDB, chiffré AES-256-GCM) │
    └────────────────────────────────────────────────────────────────────┘
@@ -64,7 +70,11 @@ horizontal qui ajuste le nombre de réplicas sur la mémoire réellement observ�
                                        rapporte phase + mémoire réelle (RSS)
 ```
 
-- **`internal/store`** — `Store` (Get/Put/Delete/List). `RaftStore` répliqué, chiffré au repos.
+- **`internal/store`** — `Store` (Get/Put/Delete/List). `RaftStore` répliqué, chiffré au repos, avec
+  rotation de clé (`RotateEncryptionKey` + `ReencryptAll`) : la clé précédente reste utilisable en
+  lecture le temps que chaque valeur soit réécrite sous la nouvelle, puis est abandonnée — aucune
+  interruption de service pendant la rotation. Le coffre-fort de secrets (`Secret`/`SecretService`)
+  hérite directement de ce chiffrement, sans code dédié.
 - **`internal/identity`** — CA légère SPIFFE, enrôlement trust-on-first-use.
 - **`internal/rbac`** — autorisation deny-by-default par préfixe de chemin SPIFFE.
 - **`internal/admission`** — pipeline non contournable (sécurité, signature, quotas).
@@ -77,6 +87,12 @@ horizontal qui ajuste le nombre de réplicas sur la mémoire réellement observ�
   non sélectionné reste ouvert par défaut — différenciateur voulu, section 01 du design doc).
 - **`internal/telemetry`** — OpenTelemetry natif : traces automatiques de chaque appel gRPC
   (`otelgrpc`), métriques (décisions d'admission), exporteurs `none`/`stdout`/`otlp`.
+- **`internal/policy`** — moteur de policy natif en CEL (Common Expression Language — le même langage
+  que Kubernetes utilise depuis sa propre `ValidatingAdmissionPolicy`, à la place de Rego/OPA) :
+  compile une expression (`"team" in pod.labels`, `pod.containers.all(c,
+  c.image.startsWith("registry.interne/"))`...) et l'évalue contre le pod admis. Branché dans
+  l'admission chain via `admission.PolicyValidator` — mêmes primitives que le reste de l'admission
+  control, pas un service séparé.
 - **`internal/registry`** — accès typé et générique au-dessus du `Store`.
 - **`internal/apiserver`** — serveur gRPC, `AuthInterceptor`, tous les services de ressources.
 - **`internal/controller`** — `Manager`/`Reconciler`, réconciliateurs (`DeploymentReconciler`,
@@ -145,6 +161,21 @@ sur la mémoire résidente réellement mesurée (`status.memory_usage_bytes`) ra
 demandée par le conteneur — mêmes formules que l'algorithme HPA de Kubernetes (cible 100% d'utilisation
 par défaut).
 
+### Policy native et secrets (Phase 6)
+
+Créer une `Policy` cluster-wide bloque tout `Pod`/`Deployment` qui ne satisfait pas son expression CEL,
+au même titre que les autres validateurs d'admission :
+
+```bash
+# via un client gRPC — nimbusctl n'a pas encore de commande dédiée
+# Policy.Spec.Expression: `"team" in pod.labels`
+```
+
+Les `Secret` sont chiffrés au repos comme toute autre ressource (Phase 3). `-secret-key-rotation-interval`
+(défaut 24h) contrôle la fréquence à laquelle le control plane régénère la clé, re-chiffre chaque
+valeur stockée, puis abandonne l'ancienne clé — testé avec un intervalle de quelques secondes : le
+secret reste lisible et intact à travers plusieurs rotations consécutives.
+
 ### Benchmarks
 
 Des benchmarks Go mesurent les opérations internes du control plane (boucle de réconciliation,
@@ -165,7 +196,7 @@ Trois rôles SVID, choisis à l'enrôlement (`SVIDRole`) :
 | Rôle | Chemin SPIFFE | Permissions |
 |---|---|---|
 | `NODE` | `/node/<name>` | `nodes:create,update` uniquement (auto-enregistrement + heartbeat) |
-| `CLIENT` | `/client/<name>` | `pods:*`, `deployments:*`, `volumes:*`, `networkpolicies:*`, `nodes:get,list` |
+| `CLIENT` | `/client/<name>` | `pods:*`, `deployments:*`, `volumes:*`, `networkpolicies:*`, `policies:*`, `secrets:*`, `nodes:get,list` |
 | `CONTROL_PLANE` | `/control-plane/<id>` | `*:*` — réplicas du control plane uniquement |
 
 Tout appel dont la méthode n'a pas de mapping RBAC explicite, ou dont l'identité n'a pas de binding
@@ -203,10 +234,20 @@ correspondant, est **refusé par défaut**.
 >   `Deployment` (`.Spec.Replicas` vs. `.Status`) de manière concurrente ; chacun relit l'objet juste
 >   avant d'écrire pour éviter de s'écraser mutuellement (pas de vérification `resource_version`
 >   complète à travers tout le système pour l'instant — un seul champ protégé par écrivain).
+> - La rotation de clé de chiffrement est un mécanisme par processus : sur un cluster à plusieurs
+>   réplicas control-plane, la nouvelle clé n'est aujourd'hui redistribuée qu'au réplica qui déclenche
+>   la rotation (le leader). Un vrai déploiement multi-réplicas aurait besoin de repousser la nouvelle
+>   clé aux autres réplicas (même mécanisme que la distribution de la clé initiale à l'enrôlement) avant
+>   de lancer `ReencryptAll` — travail futur, cohérent avec la limite déjà notée sur la CA à réplica
+>   unique.
+> - Le moteur de policy CEL évalue namespace/labels/conteneurs du pod admis ; il n'a pas encore accès
+>   aux autres ressources du cluster (quotas déjà consommés, autres pods du namespace...) — les
+>   politiques inter-ressources restent du ressort de `QuotaPolicy` pour l'instant.
 
-Lancer les tests (Raft mono-nœud réel, chiffrement au repos vérifié sur le fichier BoltDB, handshake
-mTLS réel, admission control + RBAC testés bout-en-bout par gRPC, spans OpenTelemetry vérifiés en
-mémoire, driver CSI qui crée/liste/supprime de vrais répertoires) :
+Lancer les tests (Raft mono-nœud réel, chiffrement au repos vérifié sur le fichier BoltDB, rotation de
+clé vérifiée sur le ciphertext brut, handshake mTLS réel, admission control + RBAC + policies CEL
+testés bout-en-bout par gRPC, spans OpenTelemetry vérifiés en mémoire, driver CSI qui crée/liste/supprime
+de vrais répertoires) :
 
 ```bash
 go test ./...
@@ -236,6 +277,8 @@ protoc \
 | `crypto/ecdsa`, `crypto/aes` (stdlib) | Signature d'image et chiffrement au repos — stand-ins pour cosign/sigstore |
 | `container-storage-interface/spec` | Contrat CSI standard (driver hostpath maison) |
 | `go.opentelemetry.io/otel`, `.../contrib/.../otelgrpc` | Traces et métriques natives, sans agent tiers |
+| `google/cel-go` | Moteur de policy natif (CEL — même langage que Kubernetes `ValidatingAdmissionPolicy`) |
+| `shirou/gopsutil` | Mémoire résidente réelle des processus supervisés par l'agent |
 | `containerd/containerd` | Client CRI, exécution des conteneurs (agent — travail futur) |
 | `cilium/ebpf`, `microsoft/ebpf-for-windows` | Dataplane réseau eBPF (à câbler une fois le CRI en place) |
 
@@ -259,5 +302,7 @@ composant correspondant n'est pas réellement câblé — voir
       (`RestartPolicy`, `restart_count`), remplacement des pods en échec terminal, scheduler informé
       par l'usage réellement attribué par nœud, autoscaling horizontal sur mémoire observée,
       benchmarks du control plane.
-- [ ] Phases 6-9 : gouvernance/observabilité natives supplémentaires (coffre-fort de secrets,
-      policy engine), mesh/GitOps natifs, multi-cluster/edge/WASM/GPU, FinOps — voir le design doc.
+- [x] **Phase 6 — Gouvernance et observabilité natives** : moteur de policy interne en CEL (mêmes
+      primitives que l'admission control), coffre-fort de secrets chiffré au repos avec rotation de
+      clé automatique et sans interruption (télémétrie native déjà couverte en Phase 4).
+- [ ] Phases 7-9 : mesh/GitOps natifs, multi-cluster/edge/WASM/GPU, FinOps — voir le design doc.

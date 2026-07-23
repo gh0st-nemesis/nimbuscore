@@ -32,7 +32,7 @@ func (svc *deploymentService) CreateDeployment(ctx context.Context, req *v1.Crea
 		return nil, status.Error(codes.InvalidArgument, "deployment.metadata.name is required")
 	}
 
-	admitReq := &admission.Request{Namespace: meta.GetNamespace(), Spec: d.GetSpec().GetTemplate(), Replicas: d.GetSpec().GetReplicas()}
+	admitReq := &admission.Request{Namespace: meta.GetNamespace(), Labels: meta.GetLabels(), Spec: d.GetSpec().GetTemplate(), Replicas: d.GetSpec().GetReplicas()}
 	if err := svc.admission.Admit(ctx, admitReq); err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
 	}

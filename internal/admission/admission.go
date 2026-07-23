@@ -22,6 +22,7 @@ var decisionsCounter = sync.OnceValue(func() metric.Int64Counter {
 
 type Request struct {
 	Namespace string
+	Labels    map[string]string
 	Spec      *v1.PodSpec
 	Replicas  int32
 }

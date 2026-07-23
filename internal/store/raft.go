@@ -44,7 +44,10 @@ type RaftStore struct {
 	transport *raft.NetworkTransport
 	fsm       *fsm
 	logStore  *raftboltdb.BoltStore
-	encKey    []byte
+
+	keyMu      sync.RWMutex
+	encKey     []byte
+	prevEncKey []byte
 }
 
 func NewRaftStore(cfg RaftConfig) (*RaftStore, error) {
@@ -175,17 +178,66 @@ func (s *RaftStore) List(_ context.Context, prefix string) (map[string][]byte, e
 }
 
 func (s *RaftStore) encrypt(plaintext []byte) ([]byte, error) {
-	if len(s.encKey) == 0 {
+	s.keyMu.RLock()
+	key := s.encKey
+	s.keyMu.RUnlock()
+
+	if len(key) == 0 {
 		return plaintext, nil
 	}
-	return encryptValue(s.encKey, plaintext)
+	return encryptValue(key, plaintext)
 }
 
 func (s *RaftStore) decrypt(stored []byte) ([]byte, error) {
-	if len(s.encKey) == 0 {
+	s.keyMu.RLock()
+	key, prevKey := s.encKey, s.prevEncKey
+	s.keyMu.RUnlock()
+
+	if len(key) == 0 {
 		return stored, nil
 	}
-	return decryptValue(s.encKey, stored)
+	plain, err := decryptValue(key, stored)
+	if err == nil {
+		return plain, nil
+	}
+	if len(prevKey) > 0 {
+		if plain, prevErr := decryptValue(prevKey, stored); prevErr == nil {
+			return plain, nil
+		}
+	}
+	return nil, err
+}
+
+func (s *RaftStore) RotateEncryptionKey(newKey []byte) error {
+	if len(newKey) != EncryptionKeySize {
+		return fmt.Errorf("store: encryption key must be %d bytes, got %d", EncryptionKeySize, len(newKey))
+	}
+	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+	s.prevEncKey = s.encKey
+	s.encKey = newKey
+	return nil
+}
+
+func (s *RaftStore) ReencryptAll(ctx context.Context) (int, error) {
+	all, err := s.List(ctx, "")
+	if err != nil {
+		return 0, fmt.Errorf("store: list values to re-encrypt: %w", err)
+	}
+
+	count := 0
+	for key, value := range all {
+		if err := s.Put(ctx, key, value); err != nil {
+			return count, fmt.Errorf("store: re-encrypt %s: %w", key, err)
+		}
+		count++
+	}
+
+	s.keyMu.Lock()
+	s.prevEncKey = nil
+	s.keyMu.Unlock()
+
+	return count, nil
 }
 
 type fsm struct {

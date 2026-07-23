@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+import "common.proto";
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+message PolicySpec {
+  string expression = 1;
+  string message = 2;
+}
+
+message Policy {
+  ObjectMeta metadata = 1;
+  PolicySpec spec = 2;
+}
+
+service PolicyService {
+  rpc CreatePolicy(CreatePolicyRequest) returns (Policy);
+  rpc GetPolicy(GetPolicyRequest) returns (Policy);
+  rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
+  rpc DeletePolicy(DeletePolicyRequest) returns (DeletePolicyResponse);
+}
+
+message CreatePolicyRequest {
+  Policy policy = 1;
+}
+
+message GetPolicyRequest {
+  string name = 1;
+}
+
+message ListPoliciesRequest {}
+
+message ListPoliciesResponse {
+  repeated Policy items = 1;
+}
+
+message DeletePolicyRequest {
+  string name = 1;
+}
+
+message DeletePolicyResponse {}
