@@ -30,6 +30,11 @@ var methodResourceVerb = map[string]struct{ Resource, Verb string }{
 	"/nimbuscore.v1.NetworkPolicyService/ListNetworkPolicies": {"networkpolicies", "list"},
 	"/nimbuscore.v1.NetworkPolicyService/DeleteNetworkPolicy": {"networkpolicies", "delete"},
 
+	"/nimbuscore.v1.ServiceService/CreateService": {"services", "create"},
+	"/nimbuscore.v1.ServiceService/GetService":    {"services", "get"},
+	"/nimbuscore.v1.ServiceService/ListServices":  {"services", "list"},
+	"/nimbuscore.v1.ServiceService/DeleteService": {"services", "delete"},
+
 	"/nimbuscore.v1.PolicyService/CreatePolicy": {"policies", "create"},
 	"/nimbuscore.v1.PolicyService/GetPolicy":    {"policies", "get"},
 	"/nimbuscore.v1.PolicyService/ListPolicies": {"policies", "list"},
@@ -70,7 +75,7 @@ func DefaultRBACBindings() []rbac.Binding {
 	clientRole := rbac.Role{
 		Name: "client",
 		Rules: []rbac.Rule{
-			{Resources: []string{"pods", "deployments", "volumes", "networkpolicies", "policies", "secrets", "images", "backup", "federation", "finops"}, Verbs: []string{rbac.Wildcard}},
+			{Resources: []string{"pods", "deployments", "volumes", "networkpolicies", "services", "policies", "secrets", "images", "backup", "federation", "finops"}, Verbs: []string{rbac.Wildcard}},
 			{Resources: []string{"nodes"}, Verbs: []string{"get", "list"}},
 		},
 	}

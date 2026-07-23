@@ -9,6 +9,10 @@ if ! getent passwd nimbuscore >/dev/null; then
   adduser --system --no-create-home --ingroup nimbuscore --shell /usr/sbin/nologin nimbuscore
 fi
 
+if getent group docker >/dev/null; then
+  usermod -aG docker nimbuscore || true
+fi
+
 mkdir -p /var/lib/nimbuscore/apiserver /var/lib/nimbuscore/agent
 chown -R nimbuscore:nimbuscore /var/lib/nimbuscore
 chmod 0750 /var/lib/nimbuscore/apiserver /var/lib/nimbuscore/agent
@@ -29,6 +33,12 @@ token, node name, control-plane address), then:
 The default apiserver.env bootstraps a brand-new single-replica cluster
 with image signature verification disabled — fine for local testing,
 not for production. See README.md for a hardened configuration.
+
+nimbus-agent runs Pods that set an image as real Docker containers.
+Install Docker separately (apt install docker.io) and restart
+nimbus-agent afterwards if it was already running — the nimbuscore
+user was just added to the docker group and needs a fresh login/service
+restart to pick that up.
 MSG
 
 exit 0

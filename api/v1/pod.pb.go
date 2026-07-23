@@ -215,6 +215,7 @@ type Container struct {
 	SecurityContext *SecurityContext       `protobuf:"bytes,4,opt,name=security_context,json=securityContext,proto3" json:"security_context,omitempty"`
 	Command         []string               `protobuf:"bytes,5,rep,name=command,proto3" json:"command,omitempty"`
 	WasmModulePath  string                 `protobuf:"bytes,6,opt,name=wasm_module_path,json=wasmModulePath,proto3" json:"wasm_module_path,omitempty"`
+	ContainerPorts  []int32                `protobuf:"varint,7,rep,packed,name=container_ports,json=containerPorts,proto3" json:"container_ports,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -289,6 +290,13 @@ func (x *Container) GetWasmModulePath() string {
 		return x.WasmModulePath
 	}
 	return ""
+}
+
+func (x *Container) GetContainerPorts() []int32 {
+	if x != nil {
+		return x.ContainerPorts
+	}
+	return nil
 }
 
 type PodSpec struct {
@@ -507,14 +515,15 @@ const file_pod_proto_rawDesc = "" +
 	"privileged\x18\x03 \x01(\bR\n" +
 	"privileged\x12<\n" +
 	"\x1aallow_privilege_escalation\x18\x04 \x01(\bR\x18allowPrivilegeEscalation\x12%\n" +
-	"\x0frun_as_non_root\x18\x05 \x01(\bR\frunAsNonRoot\"\x87\x02\n" +
+	"\x0frun_as_non_root\x18\x05 \x01(\bR\frunAsNonRoot\"\xb0\x02\n" +
 	"\tContainer\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12A\n" +
 	"\tresources\x18\x03 \x01(\v2#.nimbuscore.v1.ResourceRequirementsR\tresources\x12I\n" +
 	"\x10security_context\x18\x04 \x01(\v2\x1e.nimbuscore.v1.SecurityContextR\x0fsecurityContext\x12\x18\n" +
 	"\acommand\x18\x05 \x03(\tR\acommand\x12(\n" +
-	"\x10wasm_module_path\x18\x06 \x01(\tR\x0ewasmModulePath\"\xdb\x01\n" +
+	"\x10wasm_module_path\x18\x06 \x01(\tR\x0ewasmModulePath\x12'\n" +
+	"\x0fcontainer_ports\x18\a \x03(\x05R\x0econtainerPorts\"\xdb\x01\n" +
 	"\aPodSpec\x128\n" +
 	"\n" +
 	"containers\x18\x01 \x03(\v2\x18.nimbuscore.v1.ContainerR\n" +

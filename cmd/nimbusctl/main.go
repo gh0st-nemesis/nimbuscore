@@ -37,6 +37,7 @@ func main() {
 	root.AddCommand(newGetCmd())
 	root.AddCommand(newApplyCmd())
 	root.AddCommand(newRunCmd())
+	root.AddCommand(newDeleteCmd())
 	root.AddCommand(newConfigCmd())
 	root.AddCommand(newGenerateKeyCmd())
 	root.AddCommand(newSignImageCmd())

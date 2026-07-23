@@ -99,6 +99,12 @@ d'estimation de coût FinOps exposé via gRPC.
 - **`internal/netpolicy`** — moteur de policy réseau : `Allowed(policies, source, dest, protocole,
   port)`, **deny-by-default** même en l'absence de toute policy (contrairement à Kubernetes, où un pod
   non sélectionné reste ouvert par défaut — différenciateur voulu, section 01 du design doc).
+- **`Service`** (`ServiceService`, style NodePort) — pas de réconciliateur dédié : `GetService`/
+  `ListServices` résolvent en direct les pods `Running` dont les labels correspondent à
+  `spec.selector`, et pour chacun renvoient `<node.status.internal_ip>:<target_port ou port>` dans
+  `status.endpoints`. `nimbus-agent` détecte et rapporte sa propre IP joignable (`net.Dial` vers le
+  control plane, ou `-node-ip` explicite) à l'enrôlement. C'est le lien direct « port + IP » : pas de
+  ClusterIP virtuelle ni de proxy — chaque endpoint pointe directement le nœud qui héberge le pod.
 - **`internal/telemetry`** — OpenTelemetry natif : traces automatiques de chaque appel gRPC
   (`otelgrpc`), métriques (décisions d'admission), exporteurs `none`/`stdout`/`otlp`.
 - **`internal/policy`** — moteur de policy natif en CEL (Common Expression Language — le même langage
@@ -121,14 +127,22 @@ d'estimation de coût FinOps exposé via gRPC.
 - **`internal/scheduler`** — `Scheduler` filter-then-score, avec filtrage sur ressources nommées
   (`accelerators`, ex. `nvidia.com/gpu`) en plus de CPU/mémoire — mêmes primitives que les « extended
   resources » de Kubernetes.
-- **`internal/agent`** — agent de nœud : boucle de réconciliation réelle (liste les pods qui lui sont
-  assignés, démarre/arrête de vrais processus OS via `os/exec`, détecte les sorties, redémarre selon
-  `RestartPolicy`, échantillonne la mémoire résidente réelle via `gopsutil`, rapporte tout via
-  `PodService.UpdatePodStatus`). Si `Container.wasm_module_path` est renseigné, le conteneur est
-  exécuté comme module WebAssembly via `internal/wasmrt` (wazero, WASI, zéro cgo) plutôt que comme
-  process natif — utile pour des charges légères de type edge sans binaire natif par plateforme. Ce
-  n'est pas encore un vrai runtime OCI/CRI (pas d'image, pas d'isolation cgroups/namespaces) —
-  `Container.command` exécute directement un binaire côté hôte ; voir les limites connues plus bas.
+- **`internal/agent`** — agent de nœud, trois modes d'exécution selon le conteneur :
+  1. `Container.wasm_module_path` renseigné → module WebAssembly via `internal/wasmrt` (wazero, WASI,
+     zéro cgo) — pour des charges edge légères sans binaire natif par plateforme.
+  2. `Container.image` renseigné → **vrai conteneur Docker** (`docker run -d --name ... -p port:port
+     <image> <command>`, en shellant le CLI `docker` plutôt qu'en tirant le SDK Go complet — même
+     esprit que le reste du projet, un outil réel invoqué en externe). L'image est réellement tirée et
+     exécutée par le daemon Docker du nœud ; `docker wait`/`docker inspect` détectent la sortie et
+     donnent le PID pour l'échantillonnage mémoire réel via `gopsutil`. Les ports déclarés
+     (`Container.container_ports`) sont publiés en 1:1 (port hôte = port conteneur).
+  3. Ni l'un ni l'autre → `Container.command` exécuté directement comme process OS hôte via `os/exec`
+     (mode historique, toujours utile pour des tests sans image/Docker).
+
+  Dans tous les cas : boucle de réconciliation réelle (liste les pods assignés, démarre/arrête,
+  détecte les sorties, redémarre selon `RestartPolicy`), rapporte tout via `PodService.UpdatePodStatus`.
+  Requiert Docker installé sur le nœud pour le mode 2 (voir les limites connues plus bas — ce n'est
+  toujours pas un vrai CRI/containerd : pas de gestion de volumes/env vars OCI, pas de retry de pull).
 - **`internal/mesh`** — `CircuitBreaker` (Closed/Open/HalfOpen) et `RetryPolicy` (backoff exponentiel),
   assemblés en un `grpc.UnaryClientInterceptor` réutilisable. « Mesh sans sidecar » : la résilience
   réseau (retries, coupe-circuit) vit dans le processus client, pas dans un proxy injecté à côté.
@@ -270,18 +284,41 @@ Le fichier est écrit dans `~/.nimbus/config.json` (mode `0600`, JSON en clair �
 partagé n'est pas un secret long terme, seulement ce qu'il faut pour obtenir un SVID court terme ;
 ne pas y stocker un join token de production sans en avoir conscience).
 
-Créer un Pod ou un Deployment sans écrire de manifeste, façon `kubectl run` :
+Créer un Pod ou un Deployment sans écrire de manifeste, façon `kubectl run` — avec `--image`, l'agent
+tire et lance un vrai conteneur Docker sur le nœud choisi par le scheduler :
 
 ```bash
-nimbusctl run web --image=nginx:v1 -- sleep 3600     # un seul Pod
+nimbusctl run web --image=nginx:alpine --port=80          # un vrai nginx, port 80 publié sur le nœud
 nimbusctl run api --image=alpine:v1 --replicas=3 -- sleep 3600   # un Deployment à 3 réplicas
 ```
 
-> Sans `-- <commande>`, `nimbusctl run` prévient : l'agent exécute les conteneurs comme de vrais
-> processus OS (pas encore de runtime CRI/OCI, cf. limites connues plus bas), donc sans commande il
-> n'y a rien à exécuter — `--image` sert à la vérification de signature, pas à un vrai pull d'image.
+`--port` (répétable) déclare le(s) port(s) que le process écoute **à l'intérieur** du conteneur ; le
+mapping est un passthrough 1:1 (port hôte = port conteneur). Sans `--image` ni `-- <commande>`,
+`nimbusctl run` prévient qu'il n'y a rien à exécuter.
 
-Ou avec un manifeste JSON (`kind: Pod|Deployment|Node`), façon `kubectl apply -f` :
+Trouver le lien réel une fois le pod `Running`, en créant un `Service` qui sélectionne ses labels
+(`nimbusctl run` pose automatiquement `app=<nom>`) :
+
+```bash
+cat > web-svc.json <<'EOF'
+{"kind":"Service","metadata":{"name":"web-svc","namespace":"default"},
+ "spec":{"selector":{"app":"web"},"port":80}}
+EOF
+nimbusctl apply -f web-svc.json
+nimbusctl get services
+# NAME     NAMESPACE  PORT  ENDPOINTS
+# web-svc  default    80    192.168.1.89:80
+curl http://192.168.1.89:80/
+```
+
+Supprimer une ressource, façon `kubectl delete` :
+
+```bash
+nimbusctl delete pod web
+nimbusctl delete deployment api
+```
+
+Ou avec un manifeste JSON (`kind: Pod|Deployment|Node|Service`), façon `kubectl apply -f` :
 
 ```bash
 nimbusctl apply -f deployment.json
@@ -381,7 +418,7 @@ Trois rôles SVID, choisis à l'enrôlement (`SVIDRole`) :
 | Rôle | Chemin SPIFFE | Permissions |
 |---|---|---|
 | `NODE` | `/node/<name>` | `nodes:create,update` uniquement (auto-enregistrement + heartbeat) |
-| `CLIENT` | `/client/<name>` | `pods:*`, `deployments:*`, `volumes:*`, `networkpolicies:*`, `policies:*`, `secrets:*`, `images:*`, `backup:*`, `federation:*`, `finops:*`, `nodes:get,list` |
+| `CLIENT` | `/client/<name>` | `pods:*`, `deployments:*`, `volumes:*`, `networkpolicies:*`, `services:*`, `policies:*`, `secrets:*`, `images:*`, `backup:*`, `federation:*`, `finops:*`, `nodes:get,list` |
 | `CONTROL_PLANE` | `/control-plane/<id>` | `*:*` — réplicas du control plane uniquement |
 
 Tout appel dont la méthode n'a pas de mapping RBAC explicite, ou dont l'identité n'a pas de binding
@@ -404,13 +441,30 @@ correspondant, est **refusé par défaut**.
 >   pas une application au niveau noyau : eBPF a besoin d'un noyau Linux pour charger des programmes.
 >   Le moteur `Allowed(...)` est prêt à être branché derrière `cilium/ebpf` dès que l'agent isole
 >   réellement les conteneurs dans des espaces réseau (namespaces Linux / Job Objects Windows).
-> - L'agent exécute les conteneurs comme de simples processus OS (`os/exec`), pas comme de vrais
->   conteneurs OCI : pas d'image téléchargée, pas d'isolation cgroups/namespaces/Job Objects, pas de
->   système de fichiers dédié. `Container.command` doit pointer vers un binaire déjà présent sur le
->   nœud. C'est un runtime de développement qui rend le self-healing et l'autoscaling réels et
->   testables dès maintenant ; le vrai câblage CRI/containerd (Phase 4 du design doc, toujours en
->   attente) remplacera ce runtime par l'exécution de vraies images de conteneurs, sans changer
->   l'interface `agent.Runtime` ni la logique de réconciliation qui en dépend.
+> - Quand `Container.image` est renseigné, l'agent lance un vrai conteneur Docker (image réellement
+>   tirée et exécutée par le daemon du nœud) — mais en shellant le CLI `docker`, pas via une intégration
+>   CRI/containerd complète : pas de variables d'environnement/volumes au niveau `Container` (seuls
+>   l'image, la commande et les ports sont câblés pour l'instant), pas de retry/backoff sur un pull qui
+>   échoue, pas de limites cgroups au-delà de `--cpus`/`--memory` quand `resources.limits` est renseigné.
+>   Ça nécessite Docker installé sur le nœud ; sans `Container.image` (juste `Container.command`),
+>   l'agent retombe sur l'exécution directe en process OS hôte (`os/exec`, mode historique).
+> - Le mapping de port de `Container.container_ports` est un passthrough 1:1 (port hôte = port
+>   conteneur) — pas de renumérotation dynamique façon vrai NodePort Kubernetes (plage 30000-32767).
+>   Deux pods sur le même nœud déclarant le même port entreront en conflit ; c'est au namespace/nommage
+>   de l'utilisateur d'éviter la collision pour l'instant.
+> - `Service` (style NodePort) n'a pas de ClusterIP virtuelle ni de proxy/round-robin : chaque appelant
+>   reçoit la liste complète des endpoints réels (`node_ip:port` par pod) et doit choisir/répartir
+>   lui-même. Pas d'équivalent kube-proxy — cohérent avec l'absence de réseau overlay (section 01 du
+>   design doc, pas encore de CNI).
+> - Pas d'Ingress : il n'y a pas encore de composant reverse-proxy qui route par hostname/chemin vers
+>   les `Service`. Le point d'entrée aujourd'hui est directement `<node_ip>:<port>` via `Service`. Un
+>   `IngressController` (probablement un reverse-proxy Go natif lisant les objets `Ingress` et
+>   rechargeant son routage à chaud) est un travail de suivi logique, pas encore fait.
+> - `NetworkPolicy` reste un moteur de décision (`internal/netpolicy.Allowed(...)`), pas encore appliqué
+>   au niveau dataplane : même si chaque conteneur Docker a maintenant son propre espace réseau (ce qui
+>   manquait quand les pods étaient de simples processus dans le netns de l'hôte), rien ne branche
+>   encore les règles iptables/nftables par conteneur sur les décisions du moteur. C'est désormais
+>   possible à câbler (Docker donne l'isolation réseau nécessaire par conteneur) mais pas encore fait.
 > - Si l'agent est tué de façon non-gracieuse (ex. `kill -9`, coupure de courant), les processus qu'il
 >   supervisait restent orphelins — l'agent ne s'appuie pas encore sur les cgroups Linux ou les Job
 >   Objects Windows pour garantir leur nettoyage automatique (le design doc note déjà cette différence

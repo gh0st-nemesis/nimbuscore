@@ -15,6 +15,7 @@ func newRunCmd() *cobra.Command {
 		image     string
 		namespace string
 		replicas  int32
+		ports     []int32
 	)
 	cmd := &cobra.Command{
 		Use:   "run <name> --image=<image> [-- command args...]",
@@ -32,11 +33,11 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("expected exactly one resource name, got %d (did you forget -- before the container command?)", len(nameArgs))
 			}
 			name := nameArgs[0]
-			if len(command) == 0 {
-				fmt.Fprintln(os.Stderr, "warning: no command given (-- <cmd> <args>...) — the agent runs containers as real OS processes (no CRI/OCI runtime yet), so without a command there is nothing for it to execute; see README known limitations")
+			if len(command) == 0 && image == "" {
+				fmt.Fprintln(os.Stderr, "warning: no command given (-- <cmd> <args>...) and no --image — the agent runs containers as plain OS processes when neither is set, so there is nothing to execute")
 			}
 
-			container := &v1.Container{Name: name, Image: image, Command: command}
+			container := &v1.Container{Name: name, Image: image, Command: command, ContainerPorts: ports}
 
 			ctx := context.Background()
 			conn, err := dial(ctx, clientConfig{controlPlaneAddr: controlPlaneAddr, joinToken: joinToken, clientName: clientName})
@@ -47,7 +48,7 @@ func newRunCmd() *cobra.Command {
 
 			if replicas <= 1 {
 				pod := &v1.Pod{
-					Metadata: &v1.ObjectMeta{Name: name, Namespace: namespace},
+					Metadata: &v1.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{"app": name}},
 					Spec:     &v1.PodSpec{Containers: []*v1.Container{container}},
 				}
 				applied, err := v1.NewPodServiceClient(conn).CreatePod(ctx, &v1.CreatePodRequest{Pod: pod})
@@ -77,6 +78,7 @@ func newRunCmd() *cobra.Command {
 	cmd.Flags().StringVar(&image, "image", "", "container image reference (required)")
 	cmd.Flags().StringVarP(&namespace, "namespace", "n", "default", "namespace to create the resource in")
 	cmd.Flags().Int32Var(&replicas, "replicas", 1, "number of replicas — creates a Deployment instead of a single Pod when > 1")
+	cmd.Flags().Int32SliceVar(&ports, "port", nil, "container port(s) to expose on the node (repeatable, e.g. --port=80 --port=443)")
 	cmd.MarkFlagRequired("image")
 	return cmd
 }

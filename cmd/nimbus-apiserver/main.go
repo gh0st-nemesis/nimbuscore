@@ -156,6 +156,7 @@ func main() {
 	v1.RegisterAdminServiceServer(srv.GRPCServer(), apiserver.NewAdminService(raftStore))
 	v1.RegisterVolumeServiceServer(srv.GRPCServer(), apiserver.NewVolumeService(raftStore, csiDriver))
 	v1.RegisterNetworkPolicyServiceServer(srv.GRPCServer(), apiserver.NewNetworkPolicyService(raftStore))
+	v1.RegisterServiceServiceServer(srv.GRPCServer(), apiserver.NewServiceService(raftStore))
 	v1.RegisterPolicyServiceServer(srv.GRPCServer(), apiserver.NewPolicyService(raftStore, policyEngine))
 	v1.RegisterSecretServiceServer(srv.GRPCServer(), apiserver.NewSecretService(raftStore))
 	v1.RegisterBackupServiceServer(srv.GRPCServer(), apiserver.NewBackupService(raftStore))

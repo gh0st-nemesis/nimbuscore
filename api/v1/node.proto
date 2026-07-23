@@ -16,6 +16,7 @@ message NodeStatus {
   bool ready = 3;
   repeated Condition conditions = 4;
   int64 last_heartbeat_unix = 5;
+  string internal_ip = 6;
 }
 
 message Node {

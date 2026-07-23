@@ -72,6 +72,7 @@ type NodeStatus struct {
 	Ready             bool                   `protobuf:"varint,3,opt,name=ready,proto3" json:"ready,omitempty"`
 	Conditions        []*Condition           `protobuf:"bytes,4,rep,name=conditions,proto3" json:"conditions,omitempty"`
 	LastHeartbeatUnix int64                  `protobuf:"varint,5,opt,name=last_heartbeat_unix,json=lastHeartbeatUnix,proto3" json:"last_heartbeat_unix,omitempty"`
+	InternalIp        string                 `protobuf:"bytes,6,opt,name=internal_ip,json=internalIp,proto3" json:"internal_ip,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -141,6 +142,13 @@ func (x *NodeStatus) GetLastHeartbeatUnix() int64 {
 	return 0
 }
 
+func (x *NodeStatus) GetInternalIp() string {
+	if x != nil {
+		return x.InternalIp
+	}
+	return ""
+}
+
 type Node struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Metadata      *ObjectMeta            `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
@@ -208,7 +216,7 @@ const file_node_proto_rawDesc = "" +
 	"\n" +
 	"node.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\"0\n" +
 	"\bNodeSpec\x12$\n" +
-	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\x84\x02\n" +
+	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\xa5\x02\n" +
 	"\n" +
 	"NodeStatus\x127\n" +
 	"\bcapacity\x18\x01 \x01(\v2\x1b.nimbuscore.v1.ResourceListR\bcapacity\x12=\n" +
@@ -217,7 +225,9 @@ const file_node_proto_rawDesc = "" +
 	"\n" +
 	"conditions\x18\x04 \x03(\v2\x18.nimbuscore.v1.ConditionR\n" +
 	"conditions\x12.\n" +
-	"\x13last_heartbeat_unix\x18\x05 \x01(\x03R\x11lastHeartbeatUnix\"\x9d\x01\n" +
+	"\x13last_heartbeat_unix\x18\x05 \x01(\x03R\x11lastHeartbeatUnix\x12\x1f\n" +
+	"\vinternal_ip\x18\x06 \x01(\tR\n" +
+	"internalIp\"\x9d\x01\n" +
 	"\x04Node\x125\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x19.nimbuscore.v1.ObjectMetaR\bmetadata\x12+\n" +
 	"\x04spec\x18\x02 \x01(\v2\x17.nimbuscore.v1.NodeSpecR\x04spec\x121\n" +

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/shirou/gopsutil/v3/process"
@@ -23,6 +25,7 @@ type trackedProcess struct {
 	pod         *v1.Pod
 	cmd         *exec.Cmd
 	wasmRuntime *wasmrt.Runtime
+	dockerName  string
 	restarts    int32
 }
 
@@ -73,10 +76,29 @@ func (r *processRuntime) memoryUsageBytes(key string) int64 {
 	r.mu.Lock()
 	tp, ok := r.procs[key]
 	r.mu.Unlock()
-	if !ok || tp.cmd == nil || tp.cmd.Process == nil {
+	if !ok {
 		return 0
 	}
-	proc, err := process.NewProcess(int32(tp.cmd.Process.Pid))
+
+	var pid int32
+	switch {
+	case tp.dockerName != "":
+		out, err := exec.Command("docker", "inspect", "-f", "{{.State.Pid}}", tp.dockerName).Output()
+		if err != nil {
+			return 0
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(string(out)))
+		if err != nil || n <= 0 {
+			return 0
+		}
+		pid = int32(n)
+	case tp.cmd != nil && tp.cmd.Process != nil:
+		pid = int32(tp.cmd.Process.Pid)
+	default:
+		return 0
+	}
+
+	proc, err := process.NewProcess(pid)
 	if err != nil {
 		return 0
 	}
@@ -96,10 +118,69 @@ func firstContainer(pod *v1.Pod) *v1.Container {
 }
 
 func (r *processRuntime) start(pod *v1.Pod) error {
-	if c := firstContainer(pod); c.GetWasmModulePath() != "" {
+	c := firstContainer(pod)
+	switch {
+	case c.GetWasmModulePath() != "":
 		return r.startWASM(pod, c.GetWasmModulePath())
+	case c.GetImage() != "":
+		return r.startDocker(pod)
+	default:
+		return r.startProcess(pod)
 	}
-	return r.startProcess(pod)
+}
+
+func dockerContainerName(pod *v1.Pod) string {
+	return fmt.Sprintf("nimbus-%s-%s", pod.GetMetadata().GetNamespace(), pod.GetMetadata().GetName())
+}
+
+func (r *processRuntime) startDocker(pod *v1.Pod) error {
+	key := podKey(pod)
+	c := firstContainer(pod)
+	name := dockerContainerName(pod)
+
+	exec.Command("docker", "rm", "-f", name).Run() //nolint:errcheck
+
+	args := []string{"run", "-d", "--name", name}
+	for _, port := range c.GetContainerPorts() {
+		args = append(args, "-p", fmt.Sprintf("%d:%d", port, port))
+	}
+	if limits := c.GetResources().GetLimits(); limits != nil {
+		if millis := limits.GetCpuMillis(); millis > 0 {
+			args = append(args, "--cpus", fmt.Sprintf("%.3f", float64(millis)/1000))
+		}
+		if mem := limits.GetMemoryBytes(); mem > 0 {
+			args = append(args, "--memory", strconv.FormatInt(mem, 10))
+		}
+	}
+	args = append(args, c.GetImage())
+	args = append(args, c.GetCommand()...)
+
+	out, err := exec.Command("docker", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("agent: docker run %s: %w: %s", c.GetImage(), err, strings.TrimSpace(string(out)))
+	}
+
+	r.mu.Lock()
+	restarts := int32(0)
+	if existing, ok := r.procs[key]; ok {
+		restarts = existing.restarts
+	}
+	r.procs[key] = &trackedProcess{pod: pod, dockerName: name, restarts: restarts}
+	r.mu.Unlock()
+
+	go func() {
+		waitOut, waitErr := exec.Command("docker", "wait", name).Output()
+		exitCode := 0
+		if waitErr != nil {
+			exitCode = -1
+		} else if n, convErr := strconv.Atoi(strings.TrimSpace(string(waitOut))); convErr == nil {
+			exitCode = n
+		} else {
+			exitCode = -1
+		}
+		r.exited <- exitEvent{key: key, exitCode: exitCode}
+	}()
+	return nil
 }
 
 func (r *processRuntime) startProcess(pod *v1.Pod) error {
@@ -197,6 +278,9 @@ func (r *processRuntime) stop(key string) {
 	}
 	if tp.wasmRuntime != nil {
 		_ = tp.wasmRuntime.Close(context.Background())
+	}
+	if tp.dockerName != "" {
+		_ = exec.Command("docker", "rm", "-f", tp.dockerName).Run()
 	}
 }
 

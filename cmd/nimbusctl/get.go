@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -33,6 +34,8 @@ func newGetCmd() *cobra.Command {
 				return getNodes(ctx, conn)
 			case "deployments", "deployment", "deploy":
 				return getDeployments(ctx, conn, namespace)
+			case "services", "service", "svc":
+				return getServices(ctx, conn, namespace)
 			default:
 				return fmt.Errorf("unknown resource %q (supported: pods, nodes, deployments)", args[0])
 			}
@@ -65,11 +68,34 @@ func getNodes(ctx context.Context, conn *grpc.ClientConn) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tREADY\tCPU-ALLOCATABLE\tMEMORY-ALLOCATABLE")
+	fmt.Fprintln(w, "NAME\tREADY\tINTERNAL-IP\tCPU-ALLOCATABLE\tMEMORY-ALLOCATABLE")
 	for _, n := range resp.GetItems() {
-		fmt.Fprintf(w, "%s\t%v\t%dm\t%d\n",
-			n.GetMetadata().GetName(), n.GetStatus().GetReady(),
+		fmt.Fprintf(w, "%s\t%v\t%s\t%dm\t%d\n",
+			n.GetMetadata().GetName(), n.GetStatus().GetReady(), n.GetStatus().GetInternalIp(),
 			n.GetStatus().GetAllocatable().GetCpuMillis(), n.GetStatus().GetAllocatable().GetMemoryBytes())
+	}
+	return w.Flush()
+}
+
+func getServices(ctx context.Context, conn *grpc.ClientConn, namespace string) error {
+	resp, err := v1.NewServiceServiceClient(conn).ListServices(ctx, &v1.ListServicesRequest{Namespace: namespace})
+	if err != nil {
+		return err
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tNAMESPACE\tPORT\tENDPOINTS")
+	for _, s := range resp.GetItems() {
+		var endpoints []string
+		for _, e := range s.GetStatus().GetEndpoints() {
+			endpoints = append(endpoints, fmt.Sprintf("%s:%d", e.GetNodeIp(), e.GetNodePort()))
+		}
+		endpointsStr := strings.Join(endpoints, ",")
+		if endpointsStr == "" {
+			endpointsStr = "<none>"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%d\t%s\n",
+			s.GetMetadata().GetName(), s.GetMetadata().GetNamespace(), s.GetSpec().GetPort(), endpointsStr)
 	}
 	return w.Flush()
 }

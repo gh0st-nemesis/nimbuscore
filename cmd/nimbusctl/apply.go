@@ -30,7 +30,7 @@ func newApplyCmd() *cobra.Command {
 				return fmt.Errorf("parse %s: %w", file, err)
 			}
 			if envelope.Kind == "" {
-				return fmt.Errorf(`%s: missing required "kind" field (Pod, Deployment, Node)`, file)
+				return fmt.Errorf(`%s: missing required "kind" field (Pod, Deployment, Node, Service)`, file)
 			}
 
 			ctx := context.Background()
@@ -76,8 +76,19 @@ func newApplyCmd() *cobra.Command {
 				}
 				fmt.Printf("node/%s applied\n", applied.GetMetadata().GetName())
 
+			case "Service":
+				s := &v1.Service{}
+				if err := unmarshal.Unmarshal(raw, s); err != nil {
+					return fmt.Errorf("parse Service manifest: %w", err)
+				}
+				applied, err := v1.NewServiceServiceClient(conn).CreateService(ctx, &v1.CreateServiceRequest{Service: s})
+				if err != nil {
+					return err
+				}
+				fmt.Printf("service/%s applied\n", applied.GetMetadata().GetName())
+
 			default:
-				return fmt.Errorf("unsupported kind %q (supported: Pod, Deployment, Node)", envelope.Kind)
+				return fmt.Errorf("unsupported kind %q (supported: Pod, Deployment, Node, Service)", envelope.Kind)
 			}
 			return nil
 		},

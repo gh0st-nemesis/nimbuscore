@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -33,6 +34,7 @@ func main() {
 	cpuMillis := fs.Int64("cpu-millis", 2000, "advertised allocatable CPU, in millicores")
 	memoryBytes := fs.Int64("memory-bytes", 2<<30, "advertised allocatable memory, in bytes")
 	acceleratorsFlag := fs.String("accelerators", "", "advertised accelerators, e.g. \"nvidia.com/gpu=2\" (comma-separated for multiple kinds)")
+	nodeIP := fs.String("node-ip", "", "IP address other nodes/clients can reach this node's containers on (auto-detected from the route to -control-plane-addr if empty)")
 	heartbeatInterval := fs.Duration("heartbeat-interval", 5*time.Second, "interval between heartbeats")
 	otelExporter := fs.String("otel-exporter", "none", "OpenTelemetry exporter: none, stdout, or otlp")
 	otlpEndpoint := fs.String("otlp-endpoint", "127.0.0.1:4317", "OTLP gRPC collector endpoint (when -otel-exporter=otlp)")
@@ -83,6 +85,14 @@ func main() {
 	}
 	defer conn.Close()
 
+	internalIP := *nodeIP
+	if internalIP == "" {
+		internalIP, err = detectOutboundIP(*controlPlaneAddr)
+		if err != nil {
+			log.Fatalf("agent: detect node IP (pass -node-ip to set it explicitly): %v", err)
+		}
+	}
+
 	nodeClient := v1.NewNodeServiceClient(conn)
 	capacity := &v1.ResourceList{CpuMillis: *cpuMillis, MemoryBytes: *memoryBytes, Accelerators: parseAccelerators(*acceleratorsFlag)}
 
@@ -94,12 +104,13 @@ func main() {
 				Capacity:          capacity,
 				Allocatable:       capacity,
 				LastHeartbeatUnix: time.Now().Unix(),
+				InternalIp:        internalIP,
 			},
 		},
 	}); err != nil {
 		log.Fatalf("agent: register node: %v", err)
 	}
-	log.Printf("agent: node %q registered with the control plane", *nodeName)
+	log.Printf("agent: node %q registered with the control plane (internal_ip=%s)", *nodeName, internalIP)
 
 	go heartbeatLoop(ctx, nodeClient, *nodeName, capacity, *heartbeatInterval)
 
@@ -150,6 +161,15 @@ func parseAccelerators(s string) map[string]int64 {
 		out[strings.TrimSpace(name)] = count
 	}
 	return out
+}
+
+func detectOutboundIP(controlPlaneAddr string) (string, error) {
+	conn, err := net.Dial("udp", controlPlaneAddr)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).IP.String(), nil
 }
 
 func defaultNodeName() string {
