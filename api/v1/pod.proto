@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+import "common.proto";
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+// Container is deliberately narrow for Phase 1 — just enough to hand a
+// workload to the agent's CRI client (design doc section 04). Security
+// context fields (seccomp profile, capabilities, no-new-privileges) land
+// in Phase 3 once admission control enforces them.
+message Container {
+  string name = 1;
+  string image = 2;
+  ResourceRequirements resources = 3;
+}
+
+message PodSpec {
+  repeated Container containers = 1;
+  // node_name is set by the scheduler once a placement decision is made;
+  // empty means unscheduled.
+  string node_name = 2;
+}
+
+enum PodPhase {
+  POD_PHASE_UNSPECIFIED = 0;
+  POD_PHASE_PENDING = 1;
+  POD_PHASE_RUNNING = 2;
+  POD_PHASE_SUCCEEDED = 3;
+  POD_PHASE_FAILED = 4;
+  POD_PHASE_UNKNOWN = 5;
+}
+
+message PodStatus {
+  PodPhase phase = 1;
+  string message = 2;
+  repeated Condition conditions = 3;
+}
+
+message Pod {
+  ObjectMeta metadata = 1;
+  PodSpec spec = 2;
+  PodStatus status = 3;
+}

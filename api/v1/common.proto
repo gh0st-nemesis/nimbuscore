@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+// ObjectMeta is embedded in every resource kind (Pod, Node, Deployment).
+// Mirrors the subset of Kubernetes' ObjectMeta needed for Phase 1:
+// identity, versioning for optimistic concurrency, and label-based
+// selection.
+message ObjectMeta {
+  string name = 1;
+  string namespace = 2;
+  string uid = 3;
+  // resource_version changes on every write; callers use it for
+  // optimistic-concurrency checks once the store enforces them (Phase 2).
+  string resource_version = 4;
+  map<string, string> labels = 5;
+  int64 created_at_unix = 6;
+}
+
+// ResourceList expresses CPU and memory quantities. CPU is in millicores
+// (1000 = 1 vCPU), memory in bytes — fixed-point integers rather than
+// Kubernetes' free-form quantity strings, to keep scheduler arithmetic
+// (design doc section 03) simple.
+message ResourceList {
+  int64 cpu_millis = 1;
+  int64 memory_bytes = 2;
+}
+
+message ResourceRequirements {
+  ResourceList requests = 1;
+  ResourceList limits = 2;
+}
+
+// Condition is a point-in-time observation of one aspect of a resource's
+// state (e.g. "Ready", "Available"), following the pattern used
+// throughout the design for status reporting.
+message Condition {
+  string type = 1;
+  string status = 2;
+  string reason = 3;
+  string message = 4;
+  int64 last_transition_unix = 5;
+}

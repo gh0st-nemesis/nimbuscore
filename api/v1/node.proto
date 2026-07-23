@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+import "common.proto";
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+message NodeSpec {
+  // unschedulable cordons the node — the scheduler must skip it during
+  // the filter phase (design doc section 03).
+  bool unschedulable = 1;
+}
+
+message NodeStatus {
+  ResourceList capacity = 1;
+  ResourceList allocatable = 2;
+  bool ready = 3;
+  repeated Condition conditions = 4;
+}
+
+message Node {
+  ObjectMeta metadata = 1;
+  NodeSpec spec = 2;
+  NodeStatus status = 3;
+}

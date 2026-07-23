@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+import "pod.proto";
+import "node.proto";
+import "deployment.proto";
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+// PodService is the API Server's gRPC-internal surface for Pod objects
+// (design doc section 03). A REST façade (grpc-gateway) sits in front of
+// this for external clients in a later phase.
+service PodService {
+  rpc CreatePod(CreatePodRequest) returns (Pod);
+  rpc GetPod(GetPodRequest) returns (Pod);
+  rpc ListPods(ListPodsRequest) returns (ListPodsResponse);
+  rpc DeletePod(DeletePodRequest) returns (DeletePodResponse);
+}
+
+message CreatePodRequest {
+  Pod pod = 1;
+}
+
+message GetPodRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message ListPodsRequest {
+  string namespace = 1;
+}
+
+message ListPodsResponse {
+  repeated Pod items = 1;
+}
+
+message DeletePodRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message DeletePodResponse {}
+
+service NodeService {
+  rpc CreateNode(CreateNodeRequest) returns (Node);
+  rpc GetNode(GetNodeRequest) returns (Node);
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc DeleteNode(DeleteNodeRequest) returns (DeleteNodeResponse);
+}
+
+message CreateNodeRequest {
+  Node node = 1;
+}
+
+message GetNodeRequest {
+  string name = 1;
+}
+
+message ListNodesRequest {}
+
+message ListNodesResponse {
+  repeated Node items = 1;
+}
+
+message DeleteNodeRequest {
+  string name = 1;
+}
+
+message DeleteNodeResponse {}
+
+service DeploymentService {
+  rpc CreateDeployment(CreateDeploymentRequest) returns (Deployment);
+  rpc GetDeployment(GetDeploymentRequest) returns (Deployment);
+  rpc ListDeployments(ListDeploymentsRequest) returns (ListDeploymentsResponse);
+  rpc DeleteDeployment(DeleteDeploymentRequest) returns (DeleteDeploymentResponse);
+}
+
+message CreateDeploymentRequest {
+  Deployment deployment = 1;
+}
+
+message GetDeploymentRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message ListDeploymentsRequest {
+  string namespace = 1;
+}
+
+message ListDeploymentsResponse {
+  repeated Deployment items = 1;
+}
+
+message DeleteDeploymentRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message DeleteDeploymentResponse {}

@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+import "common.proto";
+import "pod.proto";
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+message DeploymentSpec {
+  int32 replicas = 1;
+  // selector labels identify the Pods this Deployment owns; the
+  // reconciler (design doc section 03, step C) stamps the same labels
+  // onto Pods it creates.
+  map<string, string> selector = 2;
+  PodSpec template = 3;
+}
+
+message DeploymentStatus {
+  int32 replicas = 1;
+  int32 ready_replicas = 2;
+}
+
+message Deployment {
+  ObjectMeta metadata = 1;
+  DeploymentSpec spec = 2;
+  DeploymentStatus status = 3;
+}
