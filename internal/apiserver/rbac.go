@@ -3,10 +3,11 @@ package apiserver
 import "github.com/gh0st-nemesis/nimbuscore/internal/rbac"
 
 var methodResourceVerb = map[string]struct{ Resource, Verb string }{
-	"/nimbuscore.v1.PodService/CreatePod": {"pods", "create"},
-	"/nimbuscore.v1.PodService/GetPod":    {"pods", "get"},
-	"/nimbuscore.v1.PodService/ListPods":  {"pods", "list"},
-	"/nimbuscore.v1.PodService/DeletePod": {"pods", "delete"},
+	"/nimbuscore.v1.PodService/CreatePod":       {"pods", "create"},
+	"/nimbuscore.v1.PodService/GetPod":          {"pods", "get"},
+	"/nimbuscore.v1.PodService/ListPods":        {"pods", "list"},
+	"/nimbuscore.v1.PodService/DeletePod":       {"pods", "delete"},
+	"/nimbuscore.v1.PodService/UpdatePodStatus": {"pods", "update"},
 
 	"/nimbuscore.v1.NodeService/CreateNode": {"nodes", "create"},
 	"/nimbuscore.v1.NodeService/GetNode":    {"nodes", "get"},
@@ -19,6 +20,16 @@ var methodResourceVerb = map[string]struct{ Resource, Verb string }{
 	"/nimbuscore.v1.DeploymentService/ListDeployments":  {"deployments", "list"},
 	"/nimbuscore.v1.DeploymentService/DeleteDeployment": {"deployments", "delete"},
 
+	"/nimbuscore.v1.VolumeService/CreateVolume": {"volumes", "create"},
+	"/nimbuscore.v1.VolumeService/GetVolume":    {"volumes", "get"},
+	"/nimbuscore.v1.VolumeService/ListVolumes":  {"volumes", "list"},
+	"/nimbuscore.v1.VolumeService/DeleteVolume": {"volumes", "delete"},
+
+	"/nimbuscore.v1.NetworkPolicyService/CreateNetworkPolicy": {"networkpolicies", "create"},
+	"/nimbuscore.v1.NetworkPolicyService/GetNetworkPolicy":    {"networkpolicies", "get"},
+	"/nimbuscore.v1.NetworkPolicyService/ListNetworkPolicies": {"networkpolicies", "list"},
+	"/nimbuscore.v1.NetworkPolicyService/DeleteNetworkPolicy": {"networkpolicies", "delete"},
+
 	"/nimbuscore.v1.AdminService/JoinRaft": {"admin", "join"},
 }
 
@@ -27,13 +38,14 @@ func DefaultRBACBindings() []rbac.Binding {
 		Name: "node",
 		Rules: []rbac.Rule{
 			{Resources: []string{"nodes"}, Verbs: []string{"create", "update"}},
+			{Resources: []string{"pods"}, Verbs: []string{"list", "update"}},
 		},
 	}
 
 	clientRole := rbac.Role{
 		Name: "client",
 		Rules: []rbac.Rule{
-			{Resources: []string{"pods", "deployments"}, Verbs: []string{rbac.Wildcard}},
+			{Resources: []string{"pods", "deployments", "volumes", "networkpolicies"}, Verbs: []string{rbac.Wildcard}},
 			{Resources: []string{"nodes"}, Verbs: []string{"get", "list"}},
 		},
 	}

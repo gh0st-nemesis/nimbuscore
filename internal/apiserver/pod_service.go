@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -63,4 +64,24 @@ func (svc *podService) DeletePod(ctx context.Context, req *v1.DeletePodRequest) 
 		return nil, status.Errorf(codes.Internal, "delete pod: %v", err)
 	}
 	return &v1.DeletePodResponse{}, nil
+}
+
+func (svc *podService) UpdatePodStatus(ctx context.Context, req *v1.UpdatePodStatusRequest) (*v1.Pod, error) {
+	pod, err := svc.pods.Get(ctx, req.GetNamespace(), req.GetName())
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "pod %s/%s: %v", req.GetNamespace(), req.GetName(), err)
+	}
+
+	if id, err := PeerSPIFFEID(ctx); err == nil && strings.HasPrefix(id.Path(), "/node/") {
+		callerNode := strings.TrimPrefix(id.Path(), "/node/")
+		if pod.GetSpec().GetNodeName() != "" && pod.GetSpec().GetNodeName() != callerNode {
+			return nil, status.Errorf(codes.PermissionDenied, "node %q may not update status for a pod assigned to %q", callerNode, pod.GetSpec().GetNodeName())
+		}
+	}
+
+	pod.Status = req.GetStatus()
+	if err := svc.pods.Put(ctx, req.GetNamespace(), req.GetName(), pod); err != nil {
+		return nil, status.Errorf(codes.Internal, "update pod status: %v", err)
+	}
+	return pod, nil
 }

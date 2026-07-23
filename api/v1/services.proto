@@ -14,6 +14,13 @@ service PodService {
   rpc GetPod(GetPodRequest) returns (Pod);
   rpc ListPods(ListPodsRequest) returns (ListPodsResponse);
   rpc DeletePod(DeletePodRequest) returns (DeletePodResponse);
+  rpc UpdatePodStatus(UpdatePodStatusRequest) returns (Pod);
+}
+
+message UpdatePodStatusRequest {
+  string namespace = 1;
+  string name = 2;
+  PodStatus status = 3;
 }
 
 message CreatePodRequest {

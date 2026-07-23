@@ -26,6 +26,8 @@ type DeploymentSpec struct {
 	Replicas      int32                  `protobuf:"varint,1,opt,name=replicas,proto3" json:"replicas,omitempty"`
 	Selector      map[string]string      `protobuf:"bytes,2,rep,name=selector,proto3" json:"selector,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Template      *PodSpec               `protobuf:"bytes,3,opt,name=template,proto3" json:"template,omitempty"`
+	MinReplicas   int32                  `protobuf:"varint,4,opt,name=min_replicas,json=minReplicas,proto3" json:"min_replicas,omitempty"`
+	MaxReplicas   int32                  `protobuf:"varint,5,opt,name=max_replicas,json=maxReplicas,proto3" json:"max_replicas,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -79,6 +81,20 @@ func (x *DeploymentSpec) GetTemplate() *PodSpec {
 		return x.Template
 	}
 	return nil
+}
+
+func (x *DeploymentSpec) GetMinReplicas() int32 {
+	if x != nil {
+		return x.MinReplicas
+	}
+	return 0
+}
+
+func (x *DeploymentSpec) GetMaxReplicas() int32 {
+	if x != nil {
+		return x.MaxReplicas
+	}
+	return 0
 }
 
 type DeploymentStatus struct {
@@ -197,11 +213,13 @@ var File_deployment_proto protoreflect.FileDescriptor
 
 const file_deployment_proto_rawDesc = "" +
 	"\n" +
-	"\x10deployment.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\x1a\tpod.proto\"\xe6\x01\n" +
+	"\x10deployment.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\x1a\tpod.proto\"\xac\x02\n" +
 	"\x0eDeploymentSpec\x12\x1a\n" +
 	"\breplicas\x18\x01 \x01(\x05R\breplicas\x12G\n" +
 	"\bselector\x18\x02 \x03(\v2+.nimbuscore.v1.DeploymentSpec.SelectorEntryR\bselector\x122\n" +
-	"\btemplate\x18\x03 \x01(\v2\x16.nimbuscore.v1.PodSpecR\btemplate\x1a;\n" +
+	"\btemplate\x18\x03 \x01(\v2\x16.nimbuscore.v1.PodSpecR\btemplate\x12!\n" +
+	"\fmin_replicas\x18\x04 \x01(\x05R\vminReplicas\x12!\n" +
+	"\fmax_replicas\x18\x05 \x01(\x05R\vmaxReplicas\x1a;\n" +
 	"\rSelectorEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"U\n" +

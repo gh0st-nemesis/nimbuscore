@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+import "common.proto";
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+message NetworkPolicyPort {
+  string protocol = 1;
+  int32 port = 2;
+}
+
+message NetworkPolicyPeer {
+  map<string, string> pod_selector = 1;
+}
+
+message NetworkPolicyIngressRule {
+  repeated NetworkPolicyPeer from = 1;
+  repeated NetworkPolicyPort ports = 2;
+}
+
+message NetworkPolicySpec {
+  map<string, string> pod_selector = 1;
+  repeated NetworkPolicyIngressRule ingress = 2;
+}
+
+message NetworkPolicy {
+  ObjectMeta metadata = 1;
+  NetworkPolicySpec spec = 2;
+}
+
+service NetworkPolicyService {
+  rpc CreateNetworkPolicy(CreateNetworkPolicyRequest) returns (NetworkPolicy);
+  rpc GetNetworkPolicy(GetNetworkPolicyRequest) returns (NetworkPolicy);
+  rpc ListNetworkPolicies(ListNetworkPoliciesRequest) returns (ListNetworkPoliciesResponse);
+  rpc DeleteNetworkPolicy(DeleteNetworkPolicyRequest) returns (DeleteNetworkPolicyResponse);
+}
+
+message CreateNetworkPolicyRequest {
+  NetworkPolicy network_policy = 1;
+}
+
+message GetNetworkPolicyRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message ListNetworkPoliciesRequest {
+  string namespace = 1;
+}
+
+message ListNetworkPoliciesResponse {
+  repeated NetworkPolicy items = 1;
+}
+
+message DeleteNetworkPolicyRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message DeleteNetworkPolicyResponse {}

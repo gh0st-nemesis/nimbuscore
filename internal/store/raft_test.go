@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func freeAddr(t *testing.T) string {
+func freeAddr(t testing.TB) string {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -118,7 +118,7 @@ func TestRaftStoreEncryptsAtRest(t *testing.T) {
 	}
 }
 
-func waitForLeader(t *testing.T, s *RaftStore) {
+func waitForLeader(t testing.TB, s *RaftStore) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {

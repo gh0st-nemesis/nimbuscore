@@ -11,6 +11,8 @@ message DeploymentSpec {
   int32 replicas = 1;
   map<string, string> selector = 2;
   PodSpec template = 3;
+  int32 min_replicas = 4;
+  int32 max_replicas = 5;
 }
 
 message DeploymentStatus {

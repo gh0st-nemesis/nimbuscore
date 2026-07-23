@@ -110,11 +110,15 @@ func (r *DeploymentReconciler) reconcileOne(ctx context.Context, d *v1.Deploymen
 		}
 	}
 
-	d.Status = &v1.DeploymentStatus{
+	current, err := r.deployments.Get(ctx, d.GetMetadata().GetNamespace(), d.GetMetadata().GetName())
+	if err != nil {
+		return fmt.Errorf("re-fetch deployment before status update: %w", err)
+	}
+	current.Status = &v1.DeploymentStatus{
 		Replicas:      int32(len(owned)),
 		ReadyReplicas: ready,
 	}
-	return r.deployments.Put(ctx, d.GetMetadata().GetNamespace(), d.GetMetadata().GetName(), d)
+	return r.deployments.Put(ctx, current.GetMetadata().GetNamespace(), current.GetMetadata().GetName(), current)
 }
 
 func (r *DeploymentReconciler) ownedPods(ctx context.Context, d *v1.Deployment) ([]*v1.Pod, error) {
@@ -144,6 +148,15 @@ func (r *DeploymentReconciler) ownedPods(ctx context.Context, d *v1.Deployment) 
 			}
 		}
 
+		if phase := p.GetStatus().GetPhase(); phase == v1.PodPhase_POD_PHASE_SUCCEEDED || phase == v1.PodPhase_POD_PHASE_FAILED {
+			log.Printf("deployment-controller: %s/%s: replacing %s, reached terminal phase %s",
+				d.GetMetadata().GetNamespace(), d.GetMetadata().GetName(), p.GetMetadata().GetName(), phase)
+			if err := r.pods.Delete(ctx, p.GetMetadata().GetNamespace(), p.GetMetadata().GetName()); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
 		owned = append(owned, p)
 	}
 	return owned, nil
@@ -158,6 +171,33 @@ func (r *DeploymentReconciler) nodeReady(ctx context.Context, name string) (bool
 		return false, err
 	}
 	return node.GetStatus().GetReady(), nil
+}
+
+type nodeResourceUsage struct {
+	cpuMillis   int64
+	memoryBytes int64
+}
+
+func (r *DeploymentReconciler) nodeUsage(ctx context.Context) (map[string]nodeResourceUsage, error) {
+	all, err := r.pods.List(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+
+	usage := make(map[string]nodeResourceUsage)
+	for _, p := range all {
+		nodeName := p.GetSpec().GetNodeName()
+		if nodeName == "" {
+			continue
+		}
+		u := usage[nodeName]
+		for _, c := range p.GetSpec().GetContainers() {
+			u.cpuMillis += c.GetResources().GetRequests().GetCpuMillis()
+			u.memoryBytes += c.GetResources().GetRequests().GetMemoryBytes()
+		}
+		usage[nodeName] = u
+	}
+	return usage, nil
 }
 
 func (r *DeploymentReconciler) scheduleUnassigned(ctx context.Context, pods []*v1.Pod) error {
@@ -176,15 +216,23 @@ func (r *DeploymentReconciler) scheduleUnassigned(ctx context.Context, pods []*v
 		return fmt.Errorf("list nodes: %w", err)
 	}
 
+	usage, err := r.nodeUsage(ctx)
+	if err != nil {
+		return fmt.Errorf("compute node usage: %w", err)
+	}
+
 	candidates := make([]scheduler.NodeCandidate, 0, len(nodes))
 	for _, n := range nodes {
 		if !n.GetStatus().GetReady() || n.GetSpec().GetUnschedulable() {
 			continue
 		}
+		name := n.GetMetadata().GetName()
 		candidates = append(candidates, scheduler.NodeCandidate{
-			Name:        n.GetMetadata().GetName(),
+			Name:        name,
 			CPUCapacity: n.GetStatus().GetAllocatable().GetCpuMillis(),
 			MemCapacity: n.GetStatus().GetAllocatable().GetMemoryBytes(),
+			CPUUsed:     usage[name].cpuMillis,
+			MemUsed:     usage[name].memoryBytes,
 		})
 	}
 
@@ -204,6 +252,9 @@ func (r *DeploymentReconciler) scheduleUnassigned(ctx context.Context, pods []*v
 			continue
 		}
 
+		if p.Spec == nil {
+			p.Spec = &v1.PodSpec{}
+		}
 		p.Spec.NodeName = nodeName
 		if err := r.pods.Put(ctx, p.GetMetadata().GetNamespace(), p.GetMetadata().GetName(), p); err != nil {
 			return fmt.Errorf("assign pod %s to node %s: %w", p.GetMetadata().GetName(), nodeName, err)

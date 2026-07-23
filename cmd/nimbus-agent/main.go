@@ -14,15 +14,13 @@ import (
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 	"github.com/gh0st-nemesis/nimbuscore/internal/agent"
 	"github.com/gh0st-nemesis/nimbuscore/internal/identity"
+	"github.com/gh0st-nemesis/nimbuscore/internal/telemetry"
 )
-
-type noopRuntime struct{}
-
-func (noopRuntime) RunPod(_ context.Context, _ string) error  { return nil }
-func (noopRuntime) StopPod(_ context.Context, _ string) error { return nil }
 
 func main() {
 	fs := flag.NewFlagSet("nimbus-agent", flag.ExitOnError)
@@ -32,6 +30,8 @@ func main() {
 	cpuMillis := fs.Int64("cpu-millis", 2000, "advertised allocatable CPU, in millicores")
 	memoryBytes := fs.Int64("memory-bytes", 2<<30, "advertised allocatable memory, in bytes")
 	heartbeatInterval := fs.Duration("heartbeat-interval", 5*time.Second, "interval between heartbeats")
+	otelExporter := fs.String("otel-exporter", "none", "OpenTelemetry exporter: none, stdout, or otlp")
+	otlpEndpoint := fs.String("otlp-endpoint", "127.0.0.1:4317", "OTLP gRPC collector endpoint (when -otel-exporter=otlp)")
 	fs.Parse(os.Args[1:])
 
 	if *controlPlaneAddr == "" || *joinToken == "" {
@@ -40,6 +40,16 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+
+	otelProvider, err := telemetry.Setup(ctx, telemetry.Config{
+		ServiceName:  "nimbus-agent",
+		Exporter:     *otelExporter,
+		OTLPEndpoint: *otlpEndpoint,
+	})
+	if err != nil {
+		log.Fatalf("agent: telemetry: %v", err)
+	}
+	defer otelProvider.Shutdown(context.Background())
 
 	svid, _, err := identity.Enroll(ctx, identity.EnrollConfig{
 		ControlPlaneAddr: *controlPlaneAddr,
@@ -58,7 +68,10 @@ func main() {
 	log.Printf("agent: identity %s", selfID)
 	expectControlPlane := spiffeid.MatchMemberOf(selfID.TrustDomain())
 
-	conn, err := grpc.NewClient(*controlPlaneAddr, grpc.WithTransportCredentials(credentials.NewTLS(svid.ClientTLSConfig(expectControlPlane))))
+	conn, err := grpc.NewClient(*controlPlaneAddr,
+		grpc.WithTransportCredentials(credentials.NewTLS(svid.ClientTLSConfig(expectControlPlane))),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
 	if err != nil {
 		log.Fatalf("agent: dial control plane: %v", err)
 	}
@@ -84,7 +97,7 @@ func main() {
 
 	go heartbeatLoop(ctx, nodeClient, *nodeName, capacity, *heartbeatInterval)
 
-	a := agent.New(agent.Config{NodeName: *nodeName, APIServer: *controlPlaneAddr}, noopRuntime{})
+	a := agent.New(agent.Config{NodeName: *nodeName}, v1.NewPodServiceClient(conn))
 	if err := a.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("agent: %v", err)
 	}

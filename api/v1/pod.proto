@@ -3,6 +3,7 @@ syntax = "proto3";
 package nimbuscore.v1;
 
 import "common.proto";
+import "volume.proto";
 
 option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
 
@@ -19,11 +20,21 @@ message Container {
   string image = 2;
   ResourceRequirements resources = 3;
   SecurityContext security_context = 4;
+  repeated string command = 5;
+}
+
+enum RestartPolicy {
+  RESTART_POLICY_UNSPECIFIED = 0;
+  RESTART_POLICY_ALWAYS = 1;
+  RESTART_POLICY_ON_FAILURE = 2;
+  RESTART_POLICY_NEVER = 3;
 }
 
 message PodSpec {
   repeated Container containers = 1;
   string node_name = 2;
+  repeated VolumeMount volumes = 3;
+  RestartPolicy restart_policy = 4;
 }
 
 enum PodPhase {
@@ -39,6 +50,8 @@ message PodStatus {
   PodPhase phase = 1;
   string message = 2;
   repeated Condition conditions = 3;
+  int32 restart_count = 4;
+  int64 memory_usage_bytes = 5;
 }
 
 message Pod {

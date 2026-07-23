@@ -10,6 +10,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 )
 
@@ -31,7 +33,10 @@ func Enroll(ctx context.Context, cfg EnrollConfig) (*SVID, []byte, error) {
 		InsecureSkipVerify: true,
 	}
 
-	conn, err := grpc.NewClient(cfg.ControlPlaneAddr, grpc.WithTransportCredentials(credentials.NewTLS(bootstrapTLS)))
+	conn, err := grpc.NewClient(cfg.ControlPlaneAddr,
+		grpc.WithTransportCredentials(credentials.NewTLS(bootstrapTLS)),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("identity: dial %s: %w", cfg.ControlPlaneAddr, err)
 	}

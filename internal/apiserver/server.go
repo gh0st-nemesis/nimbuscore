@@ -8,6 +8,8 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 )
 
 type Config struct {
@@ -24,7 +26,7 @@ type Server struct {
 }
 
 func New(cfg Config) *Server {
-	var opts []grpc.ServerOption
+	opts := []grpc.ServerOption{grpc.StatsHandler(otelgrpc.NewServerHandler())}
 	if cfg.TLSConfig != nil {
 		opts = append(opts, grpc.Creds(credentials.NewTLS(cfg.TLSConfig)))
 	}

@@ -18,7 +18,7 @@ func newTestReconciler() (*DeploymentReconciler, *registry.Registry[*v1.Deployme
 	return NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 0), deployments, pods, nodes
 }
 
-func seedReadyNode(t *testing.T, ctx context.Context, nodes *registry.Registry[*v1.Node], name string) {
+func seedReadyNode(t testing.TB, ctx context.Context, nodes *registry.Registry[*v1.Node], name string) {
 	t.Helper()
 	n := &v1.Node{
 		Metadata: &v1.ObjectMeta{Name: name},
@@ -237,5 +237,118 @@ func TestReconcileOneEvictsPodFromDeadNode(t *testing.T) {
 	}
 	if after[0].GetSpec().GetNodeName() != "node-2" {
 		t.Errorf("replacement pod scheduled onto %q, want node-2", after[0].GetSpec().GetNodeName())
+	}
+}
+
+func TestReconcileOneReplacesTerminalPods(t *testing.T) {
+	ctx := context.Background()
+	r, deployments, pods, nodes := newTestReconciler()
+	seedReadyNode(t, ctx, nodes, "node-1")
+
+	d := &v1.Deployment{
+		Metadata: &v1.ObjectMeta{Name: "job", Namespace: "default"},
+		Spec: &v1.DeploymentSpec{
+			Replicas: 1,
+			Selector: map[string]string{"app": "job"},
+			Template: &v1.PodSpec{Containers: []*v1.Container{{Name: "job", Image: "busybox"}}},
+		},
+	}
+	if err := deployments.Put(ctx, "default", "job", d); err != nil {
+		t.Fatalf("seed deployment: %v", err)
+	}
+	if err := r.reconcileOne(ctx, d); err != nil {
+		t.Fatalf("reconcileOne (initial): %v", err)
+	}
+
+	before, err := pods.List(ctx, "default")
+	if err != nil || len(before) != 1 {
+		t.Fatalf("expected 1 pod, got %d (err=%v)", len(before), err)
+	}
+	originalName := before[0].GetMetadata().GetName()
+	before[0].Status.Phase = v1.PodPhase_POD_PHASE_FAILED
+	if err := pods.Put(ctx, "default", originalName, before[0]); err != nil {
+		t.Fatalf("mark pod failed: %v", err)
+	}
+
+	if err := r.reconcileOne(ctx, d); err != nil {
+		t.Fatalf("reconcileOne (after failure): %v", err)
+	}
+
+	after, err := pods.List(ctx, "default")
+	if err != nil {
+		t.Fatalf("list pods: %v", err)
+	}
+	if len(after) != 1 {
+		t.Fatalf("want 1 pod after replacement, got %d", len(after))
+	}
+	if after[0].GetStatus().GetPhase() == v1.PodPhase_POD_PHASE_FAILED {
+		t.Fatal("the failed pod was not replaced")
+	}
+}
+
+func TestScheduleUnassignedAccountsForExistingUsage(t *testing.T) {
+	ctx := context.Background()
+	r, deployments, pods, nodes := newTestReconciler()
+
+	tight := &v1.Node{
+		Metadata: &v1.ObjectMeta{Name: "tight"},
+		Status: &v1.NodeStatus{
+			Ready:       true,
+			Allocatable: &v1.ResourceList{CpuMillis: 1000, MemoryBytes: 1 << 30},
+		},
+	}
+	if err := nodes.Put(ctx, "", "tight", tight); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	seedReadyNode(t, ctx, nodes, "roomy")
+
+	existing := &v1.Pod{
+		Metadata: &v1.ObjectMeta{Name: "hog", Namespace: "default"},
+		Spec: &v1.PodSpec{
+			NodeName: "tight",
+			Containers: []*v1.Container{{
+				Name:      "hog",
+				Resources: &v1.ResourceRequirements{Requests: &v1.ResourceList{CpuMillis: 900}},
+			}},
+		},
+	}
+	if err := pods.Put(ctx, "default", "hog", existing); err != nil {
+		t.Fatalf("seed existing pod: %v", err)
+	}
+
+	d := &v1.Deployment{
+		Metadata: &v1.ObjectMeta{Name: "web", Namespace: "default"},
+		Spec: &v1.DeploymentSpec{
+			Replicas: 1,
+			Selector: map[string]string{"app": "web"},
+			Template: &v1.PodSpec{Containers: []*v1.Container{{
+				Name:      "web",
+				Resources: &v1.ResourceRequirements{Requests: &v1.ResourceList{CpuMillis: 500}},
+			}}},
+		},
+	}
+	if err := deployments.Put(ctx, "default", "web", d); err != nil {
+		t.Fatalf("seed deployment: %v", err)
+	}
+
+	if err := r.reconcileOne(ctx, d); err != nil {
+		t.Fatalf("reconcileOne: %v", err)
+	}
+
+	all, err := pods.List(ctx, "default")
+	if err != nil {
+		t.Fatalf("list pods: %v", err)
+	}
+	var newPod *v1.Pod
+	for _, p := range all {
+		if p.GetMetadata().GetName() != "hog" {
+			newPod = p
+		}
+	}
+	if newPod == nil {
+		t.Fatal("new pod not found")
+	}
+	if newPod.GetSpec().GetNodeName() != "roomy" {
+		t.Errorf("scheduled onto %q, want roomy (tight only has 100m free, needs 500m)", newPod.GetSpec().GetNodeName())
 	}
 }

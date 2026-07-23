@@ -15,16 +15,20 @@ import (
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 	"github.com/gh0st-nemesis/nimbuscore/internal/admission"
 	"github.com/gh0st-nemesis/nimbuscore/internal/apiserver"
 	"github.com/gh0st-nemesis/nimbuscore/internal/controller"
+	"github.com/gh0st-nemesis/nimbuscore/internal/csi/hostpath"
 	"github.com/gh0st-nemesis/nimbuscore/internal/identity"
 	"github.com/gh0st-nemesis/nimbuscore/internal/imagesign"
 	"github.com/gh0st-nemesis/nimbuscore/internal/rbac"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
 	"github.com/gh0st-nemesis/nimbuscore/internal/scheduler"
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
+	"github.com/gh0st-nemesis/nimbuscore/internal/telemetry"
 )
 
 type allowAllVerifier struct{}
@@ -47,6 +51,9 @@ func main() {
 	allowedCapabilities := fs.String("allowed-capabilities", "", "comma-separated Linux capabilities containers may request (default: none)")
 	cpuQuotaMillis := fs.Int64("namespace-cpu-quota-millis", 0, "per-namespace CPU quota in millicores (0 = unlimited)")
 	memQuotaBytes := fs.Int64("namespace-memory-quota-bytes", 0, "per-namespace memory quota in bytes (0 = unlimited)")
+	otelExporter := fs.String("otel-exporter", "none", "OpenTelemetry exporter: none, stdout, or otlp")
+	otlpEndpoint := fs.String("otlp-endpoint", "127.0.0.1:4317", "OTLP gRPC collector endpoint (when -otel-exporter=otlp)")
+	csiHostpathDir := fs.String("csi-hostpath-dir", "./data/volumes", "directory backing the built-in hostpath CSI driver")
 	fs.Parse(os.Args[1:])
 
 	if *joinToken == "" {
@@ -58,6 +65,16 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+
+	otelProvider, err := telemetry.Setup(ctx, telemetry.Config{
+		ServiceName:  "nimbus-apiserver",
+		Exporter:     *otelExporter,
+		OTLPEndpoint: *otlpEndpoint,
+	})
+	if err != nil {
+		log.Fatalf("apiserver: telemetry: %v", err)
+	}
+	defer otelProvider.Shutdown(context.Background())
 
 	svid, ca, dek, err := loadOrBootstrapIdentity(ctx, *bootstrap, *trustDomain, *nodeID, *joinAddr, *joinToken)
 	if err != nil {
@@ -107,10 +124,17 @@ func main() {
 		admission.NewQuotaPolicy(pods, &v1.ResourceList{CpuMillis: *cpuQuotaMillis, MemoryBytes: *memQuotaBytes}),
 	)
 
+	csiDriver, err := hostpath.New(*nodeID, *csiHostpathDir)
+	if err != nil {
+		log.Fatalf("apiserver: csi hostpath driver: %v", err)
+	}
+
 	v1.RegisterPodServiceServer(srv.GRPCServer(), apiserver.NewPodService(raftStore, admissionChain))
 	v1.RegisterNodeServiceServer(srv.GRPCServer(), apiserver.NewNodeService(raftStore))
 	v1.RegisterDeploymentServiceServer(srv.GRPCServer(), apiserver.NewDeploymentService(raftStore, admissionChain))
 	v1.RegisterAdminServiceServer(srv.GRPCServer(), apiserver.NewAdminService(raftStore))
+	v1.RegisterVolumeServiceServer(srv.GRPCServer(), apiserver.NewVolumeService(raftStore, csiDriver))
+	v1.RegisterNetworkPolicyServiceServer(srv.GRPCServer(), apiserver.NewNetworkPolicyService(raftStore))
 	if ca != nil {
 		v1.RegisterIdentityServiceServer(srv.GRPCServer(), apiserver.NewIdentityService(ca, *joinToken, identity.DefaultSVIDTTL, dek))
 	}
@@ -118,6 +142,7 @@ func main() {
 	mgr := controller.NewManager()
 	mgr.Register(controller.NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 0))
 	mgr.Register(controller.NewNodeHealthReconciler(nodes, 0, 0))
+	mgr.Register(controller.NewHorizontalAutoscaler(deployments, pods, 0))
 	go controller.RunWhileLeader(ctx, raftStore, mgr, 0)
 
 	if err := srv.Serve(ctx); err != nil {
@@ -164,7 +189,10 @@ func loadOrBootstrapIdentity(ctx context.Context, bootstrap bool, trustDomain, n
 }
 
 func joinRaftCluster(ctx context.Context, svid *identity.SVID, expect spiffeid.Matcher, joinAddr, nodeID, raftAddr string) error {
-	conn, err := grpc.NewClient(joinAddr, grpc.WithTransportCredentials(credentials.NewTLS(svid.ClientTLSConfig(expect))))
+	conn, err := grpc.NewClient(joinAddr,
+		grpc.WithTransportCredentials(credentials.NewTLS(svid.ClientTLSConfig(expect))),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
 	if err != nil {
 		return err
 	}

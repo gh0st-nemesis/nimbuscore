@@ -21,6 +21,58 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type RestartPolicy int32
+
+const (
+	RestartPolicy_RESTART_POLICY_UNSPECIFIED RestartPolicy = 0
+	RestartPolicy_RESTART_POLICY_ALWAYS      RestartPolicy = 1
+	RestartPolicy_RESTART_POLICY_ON_FAILURE  RestartPolicy = 2
+	RestartPolicy_RESTART_POLICY_NEVER       RestartPolicy = 3
+)
+
+// Enum value maps for RestartPolicy.
+var (
+	RestartPolicy_name = map[int32]string{
+		0: "RESTART_POLICY_UNSPECIFIED",
+		1: "RESTART_POLICY_ALWAYS",
+		2: "RESTART_POLICY_ON_FAILURE",
+		3: "RESTART_POLICY_NEVER",
+	}
+	RestartPolicy_value = map[string]int32{
+		"RESTART_POLICY_UNSPECIFIED": 0,
+		"RESTART_POLICY_ALWAYS":      1,
+		"RESTART_POLICY_ON_FAILURE":  2,
+		"RESTART_POLICY_NEVER":       3,
+	}
+)
+
+func (x RestartPolicy) Enum() *RestartPolicy {
+	p := new(RestartPolicy)
+	*p = x
+	return p
+}
+
+func (x RestartPolicy) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RestartPolicy) Descriptor() protoreflect.EnumDescriptor {
+	return file_pod_proto_enumTypes[0].Descriptor()
+}
+
+func (RestartPolicy) Type() protoreflect.EnumType {
+	return &file_pod_proto_enumTypes[0]
+}
+
+func (x RestartPolicy) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RestartPolicy.Descriptor instead.
+func (RestartPolicy) EnumDescriptor() ([]byte, []int) {
+	return file_pod_proto_rawDescGZIP(), []int{0}
+}
+
 type PodPhase int32
 
 const (
@@ -63,11 +115,11 @@ func (x PodPhase) String() string {
 }
 
 func (PodPhase) Descriptor() protoreflect.EnumDescriptor {
-	return file_pod_proto_enumTypes[0].Descriptor()
+	return file_pod_proto_enumTypes[1].Descriptor()
 }
 
 func (PodPhase) Type() protoreflect.EnumType {
-	return &file_pod_proto_enumTypes[0]
+	return &file_pod_proto_enumTypes[1]
 }
 
 func (x PodPhase) Number() protoreflect.EnumNumber {
@@ -76,7 +128,7 @@ func (x PodPhase) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PodPhase.Descriptor instead.
 func (PodPhase) EnumDescriptor() ([]byte, []int) {
-	return file_pod_proto_rawDescGZIP(), []int{0}
+	return file_pod_proto_rawDescGZIP(), []int{1}
 }
 
 type SecurityContext struct {
@@ -161,6 +213,7 @@ type Container struct {
 	Image           string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
 	Resources       *ResourceRequirements  `protobuf:"bytes,3,opt,name=resources,proto3" json:"resources,omitempty"`
 	SecurityContext *SecurityContext       `protobuf:"bytes,4,opt,name=security_context,json=securityContext,proto3" json:"security_context,omitempty"`
+	Command         []string               `protobuf:"bytes,5,rep,name=command,proto3" json:"command,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -223,10 +276,19 @@ func (x *Container) GetSecurityContext() *SecurityContext {
 	return nil
 }
 
+func (x *Container) GetCommand() []string {
+	if x != nil {
+		return x.Command
+	}
+	return nil
+}
+
 type PodSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Containers    []*Container           `protobuf:"bytes,1,rep,name=containers,proto3" json:"containers,omitempty"`
 	NodeName      string                 `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	Volumes       []*VolumeMount         `protobuf:"bytes,3,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	RestartPolicy RestartPolicy          `protobuf:"varint,4,opt,name=restart_policy,json=restartPolicy,proto3,enum=nimbuscore.v1.RestartPolicy" json:"restart_policy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -275,13 +337,29 @@ func (x *PodSpec) GetNodeName() string {
 	return ""
 }
 
+func (x *PodSpec) GetVolumes() []*VolumeMount {
+	if x != nil {
+		return x.Volumes
+	}
+	return nil
+}
+
+func (x *PodSpec) GetRestartPolicy() RestartPolicy {
+	if x != nil {
+		return x.RestartPolicy
+	}
+	return RestartPolicy_RESTART_POLICY_UNSPECIFIED
+}
+
 type PodStatus struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Phase         PodPhase               `protobuf:"varint,1,opt,name=phase,proto3,enum=nimbuscore.v1.PodPhase" json:"phase,omitempty"`
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Conditions    []*Condition           `protobuf:"bytes,3,rep,name=conditions,proto3" json:"conditions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Phase            PodPhase               `protobuf:"varint,1,opt,name=phase,proto3,enum=nimbuscore.v1.PodPhase" json:"phase,omitempty"`
+	Message          string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Conditions       []*Condition           `protobuf:"bytes,3,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	RestartCount     int32                  `protobuf:"varint,4,opt,name=restart_count,json=restartCount,proto3" json:"restart_count,omitempty"`
+	MemoryUsageBytes int64                  `protobuf:"varint,5,opt,name=memory_usage_bytes,json=memoryUsageBytes,proto3" json:"memory_usage_bytes,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PodStatus) Reset() {
@@ -333,6 +411,20 @@ func (x *PodStatus) GetConditions() []*Condition {
 		return x.Conditions
 	}
 	return nil
+}
+
+func (x *PodStatus) GetRestartCount() int32 {
+	if x != nil {
+		return x.RestartCount
+	}
+	return 0
+}
+
+func (x *PodStatus) GetMemoryUsageBytes() int64 {
+	if x != nil {
+		return x.MemoryUsageBytes
+	}
+	return 0
 }
 
 type Pod struct {
@@ -399,7 +491,7 @@ var File_pod_proto protoreflect.FileDescriptor
 
 const file_pod_proto_rawDesc = "" +
 	"\n" +
-	"\tpod.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\"\xea\x01\n" +
+	"\tpod.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\x1a\fvolume.proto\"\xea\x01\n" +
 	"\x0fSecurityContext\x12'\n" +
 	"\x0fseccomp_profile\x18\x01 \x01(\tR\x0eseccompProfile\x12)\n" +
 	"\x10add_capabilities\x18\x02 \x03(\tR\x0faddCapabilities\x12\x1e\n" +
@@ -407,27 +499,37 @@ const file_pod_proto_rawDesc = "" +
 	"privileged\x18\x03 \x01(\bR\n" +
 	"privileged\x12<\n" +
 	"\x1aallow_privilege_escalation\x18\x04 \x01(\bR\x18allowPrivilegeEscalation\x12%\n" +
-	"\x0frun_as_non_root\x18\x05 \x01(\bR\frunAsNonRoot\"\xc3\x01\n" +
+	"\x0frun_as_non_root\x18\x05 \x01(\bR\frunAsNonRoot\"\xdd\x01\n" +
 	"\tContainer\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12A\n" +
 	"\tresources\x18\x03 \x01(\v2#.nimbuscore.v1.ResourceRequirementsR\tresources\x12I\n" +
-	"\x10security_context\x18\x04 \x01(\v2\x1e.nimbuscore.v1.SecurityContextR\x0fsecurityContext\"`\n" +
+	"\x10security_context\x18\x04 \x01(\v2\x1e.nimbuscore.v1.SecurityContextR\x0fsecurityContext\x12\x18\n" +
+	"\acommand\x18\x05 \x03(\tR\acommand\"\xdb\x01\n" +
 	"\aPodSpec\x128\n" +
 	"\n" +
 	"containers\x18\x01 \x03(\v2\x18.nimbuscore.v1.ContainerR\n" +
 	"containers\x12\x1b\n" +
-	"\tnode_name\x18\x02 \x01(\tR\bnodeName\"\x8e\x01\n" +
+	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x124\n" +
+	"\avolumes\x18\x03 \x03(\v2\x1a.nimbuscore.v1.VolumeMountR\avolumes\x12C\n" +
+	"\x0erestart_policy\x18\x04 \x01(\x0e2\x1c.nimbuscore.v1.RestartPolicyR\rrestartPolicy\"\xe1\x01\n" +
 	"\tPodStatus\x12-\n" +
 	"\x05phase\x18\x01 \x01(\x0e2\x17.nimbuscore.v1.PodPhaseR\x05phase\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x128\n" +
 	"\n" +
 	"conditions\x18\x03 \x03(\v2\x18.nimbuscore.v1.ConditionR\n" +
-	"conditions\"\x9a\x01\n" +
+	"conditions\x12#\n" +
+	"\rrestart_count\x18\x04 \x01(\x05R\frestartCount\x12,\n" +
+	"\x12memory_usage_bytes\x18\x05 \x01(\x03R\x10memoryUsageBytes\"\x9a\x01\n" +
 	"\x03Pod\x125\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x19.nimbuscore.v1.ObjectMetaR\bmetadata\x12*\n" +
 	"\x04spec\x18\x02 \x01(\v2\x16.nimbuscore.v1.PodSpecR\x04spec\x120\n" +
-	"\x06status\x18\x03 \x01(\v2\x18.nimbuscore.v1.PodStatusR\x06status*\x99\x01\n" +
+	"\x06status\x18\x03 \x01(\v2\x18.nimbuscore.v1.PodStatusR\x06status*\x83\x01\n" +
+	"\rRestartPolicy\x12\x1e\n" +
+	"\x1aRESTART_POLICY_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15RESTART_POLICY_ALWAYS\x10\x01\x12\x1d\n" +
+	"\x19RESTART_POLICY_ON_FAILURE\x10\x02\x12\x18\n" +
+	"\x14RESTART_POLICY_NEVER\x10\x03*\x99\x01\n" +
 	"\bPodPhase\x12\x19\n" +
 	"\x15POD_PHASE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11POD_PHASE_PENDING\x10\x01\x12\x15\n" +
@@ -448,33 +550,37 @@ func file_pod_proto_rawDescGZIP() []byte {
 	return file_pod_proto_rawDescData
 }
 
-var file_pod_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_pod_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_pod_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_pod_proto_goTypes = []any{
-	(PodPhase)(0),                // 0: nimbuscore.v1.PodPhase
-	(*SecurityContext)(nil),      // 1: nimbuscore.v1.SecurityContext
-	(*Container)(nil),            // 2: nimbuscore.v1.Container
-	(*PodSpec)(nil),              // 3: nimbuscore.v1.PodSpec
-	(*PodStatus)(nil),            // 4: nimbuscore.v1.PodStatus
-	(*Pod)(nil),                  // 5: nimbuscore.v1.Pod
-	(*ResourceRequirements)(nil), // 6: nimbuscore.v1.ResourceRequirements
-	(*Condition)(nil),            // 7: nimbuscore.v1.Condition
-	(*ObjectMeta)(nil),           // 8: nimbuscore.v1.ObjectMeta
+	(RestartPolicy)(0),           // 0: nimbuscore.v1.RestartPolicy
+	(PodPhase)(0),                // 1: nimbuscore.v1.PodPhase
+	(*SecurityContext)(nil),      // 2: nimbuscore.v1.SecurityContext
+	(*Container)(nil),            // 3: nimbuscore.v1.Container
+	(*PodSpec)(nil),              // 4: nimbuscore.v1.PodSpec
+	(*PodStatus)(nil),            // 5: nimbuscore.v1.PodStatus
+	(*Pod)(nil),                  // 6: nimbuscore.v1.Pod
+	(*ResourceRequirements)(nil), // 7: nimbuscore.v1.ResourceRequirements
+	(*VolumeMount)(nil),          // 8: nimbuscore.v1.VolumeMount
+	(*Condition)(nil),            // 9: nimbuscore.v1.Condition
+	(*ObjectMeta)(nil),           // 10: nimbuscore.v1.ObjectMeta
 }
 var file_pod_proto_depIdxs = []int32{
-	6, // 0: nimbuscore.v1.Container.resources:type_name -> nimbuscore.v1.ResourceRequirements
-	1, // 1: nimbuscore.v1.Container.security_context:type_name -> nimbuscore.v1.SecurityContext
-	2, // 2: nimbuscore.v1.PodSpec.containers:type_name -> nimbuscore.v1.Container
-	0, // 3: nimbuscore.v1.PodStatus.phase:type_name -> nimbuscore.v1.PodPhase
-	7, // 4: nimbuscore.v1.PodStatus.conditions:type_name -> nimbuscore.v1.Condition
-	8, // 5: nimbuscore.v1.Pod.metadata:type_name -> nimbuscore.v1.ObjectMeta
-	3, // 6: nimbuscore.v1.Pod.spec:type_name -> nimbuscore.v1.PodSpec
-	4, // 7: nimbuscore.v1.Pod.status:type_name -> nimbuscore.v1.PodStatus
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	7,  // 0: nimbuscore.v1.Container.resources:type_name -> nimbuscore.v1.ResourceRequirements
+	2,  // 1: nimbuscore.v1.Container.security_context:type_name -> nimbuscore.v1.SecurityContext
+	3,  // 2: nimbuscore.v1.PodSpec.containers:type_name -> nimbuscore.v1.Container
+	8,  // 3: nimbuscore.v1.PodSpec.volumes:type_name -> nimbuscore.v1.VolumeMount
+	0,  // 4: nimbuscore.v1.PodSpec.restart_policy:type_name -> nimbuscore.v1.RestartPolicy
+	1,  // 5: nimbuscore.v1.PodStatus.phase:type_name -> nimbuscore.v1.PodPhase
+	9,  // 6: nimbuscore.v1.PodStatus.conditions:type_name -> nimbuscore.v1.Condition
+	10, // 7: nimbuscore.v1.Pod.metadata:type_name -> nimbuscore.v1.ObjectMeta
+	4,  // 8: nimbuscore.v1.Pod.spec:type_name -> nimbuscore.v1.PodSpec
+	5,  // 9: nimbuscore.v1.Pod.status:type_name -> nimbuscore.v1.PodStatus
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_pod_proto_init() }
@@ -483,12 +589,13 @@ func file_pod_proto_init() {
 		return
 	}
 	file_common_proto_init()
+	file_volume_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pod_proto_rawDesc), len(file_pod_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
