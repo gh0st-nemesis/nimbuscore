@@ -6,10 +6,19 @@ import "common.proto";
 
 option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
 
+message SecurityContext {
+  string seccomp_profile = 1;
+  repeated string add_capabilities = 2;
+  bool privileged = 3;
+  bool allow_privilege_escalation = 4;
+  bool run_as_non_root = 5;
+}
+
 message Container {
   string name = 1;
   string image = 2;
   ResourceRequirements resources = 3;
+  SecurityContext security_context = 4;
 }
 
 message PodSpec {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"maps"
 	"net"
 	"os"
@@ -34,6 +35,8 @@ type RaftConfig struct {
 	DataDir string
 
 	Bootstrap bool
+
+	EncryptionKey []byte
 }
 
 type RaftStore struct {
@@ -41,11 +44,17 @@ type RaftStore struct {
 	transport *raft.NetworkTransport
 	fsm       *fsm
 	logStore  *raftboltdb.BoltStore
+	encKey    []byte
 }
 
 func NewRaftStore(cfg RaftConfig) (*RaftStore, error) {
 	if cfg.NodeID == "" {
 		return nil, errors.New("store: NodeID is required")
+	}
+	if len(cfg.EncryptionKey) == 0 {
+		log.Printf("store: WARNING no encryption key configured — values will be replicated and persisted in plaintext (dev only)")
+	} else if len(cfg.EncryptionKey) != EncryptionKeySize {
+		return nil, fmt.Errorf("store: encryption key must be %d bytes, got %d", EncryptionKeySize, len(cfg.EncryptionKey))
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("store: create data dir: %w", err)
@@ -95,7 +104,7 @@ func NewRaftStore(cfg RaftConfig) (*RaftStore, error) {
 		}
 	}
 
-	return &RaftStore{raft: r, transport: transport, fsm: f, logStore: logStore}, nil
+	return &RaftStore{raft: r, transport: transport, fsm: f, logStore: logStore, encKey: cfg.EncryptionKey}, nil
 }
 
 func (s *RaftStore) IsLeader() bool {
@@ -133,11 +142,19 @@ func (s *RaftStore) apply(cmd command) error {
 }
 
 func (s *RaftStore) Get(_ context.Context, key string) ([]byte, error) {
-	return s.fsm.get(key)
+	stored, err := s.fsm.get(key)
+	if err != nil {
+		return nil, err
+	}
+	return s.decrypt(stored)
 }
 
 func (s *RaftStore) Put(_ context.Context, key string, value []byte) error {
-	return s.apply(command{Op: "put", Key: key, Value: value})
+	stored, err := s.encrypt(value)
+	if err != nil {
+		return err
+	}
+	return s.apply(command{Op: "put", Key: key, Value: stored})
 }
 
 func (s *RaftStore) Delete(_ context.Context, key string) error {
@@ -145,7 +162,30 @@ func (s *RaftStore) Delete(_ context.Context, key string) error {
 }
 
 func (s *RaftStore) List(_ context.Context, prefix string) (map[string][]byte, error) {
-	return s.fsm.list(prefix), nil
+	stored := s.fsm.list(prefix)
+	out := make(map[string][]byte, len(stored))
+	for k, v := range stored {
+		plain, err := s.decrypt(v)
+		if err != nil {
+			return nil, fmt.Errorf("store: decrypt %s: %w", k, err)
+		}
+		out[k] = plain
+	}
+	return out, nil
+}
+
+func (s *RaftStore) encrypt(plaintext []byte) ([]byte, error) {
+	if len(s.encKey) == 0 {
+		return plaintext, nil
+	}
+	return encryptValue(s.encKey, plaintext)
+}
+
+func (s *RaftStore) decrypt(stored []byte) ([]byte, error) {
+	if len(s.encKey) == 0 {
+		return stored, nil
+	}
+	return decryptValue(s.encKey, stored)
 }
 
 type fsm struct {

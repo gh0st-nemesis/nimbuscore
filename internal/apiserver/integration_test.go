@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
+	"github.com/gh0st-nemesis/nimbuscore/internal/admission"
 	"github.com/gh0st-nemesis/nimbuscore/internal/apiserver"
 	"github.com/gh0st-nemesis/nimbuscore/internal/controller"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
@@ -20,10 +21,11 @@ import (
 
 func TestDeploymentCreateReconcilesToPods(t *testing.T) {
 	st := store.NewMemStore()
+	noAdmission := admission.NewChain()
 
 	grpcServer := grpc.NewServer()
-	v1.RegisterDeploymentServiceServer(grpcServer, apiserver.NewDeploymentService(st))
-	v1.RegisterPodServiceServer(grpcServer, apiserver.NewPodService(st))
+	v1.RegisterDeploymentServiceServer(grpcServer, apiserver.NewDeploymentService(st, noAdmission))
+	v1.RegisterPodServiceServer(grpcServer, apiserver.NewPodService(st, noAdmission))
 	v1.RegisterNodeServiceServer(grpcServer, apiserver.NewNodeService(st))
 
 	lis := bufconn.Listen(1 << 20)

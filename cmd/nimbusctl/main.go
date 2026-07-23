@@ -18,6 +18,8 @@ func main() {
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newGetCmd())
 	root.AddCommand(newApplyCmd())
+	root.AddCommand(newGenerateKeyCmd())
+	root.AddCommand(newSignImageCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

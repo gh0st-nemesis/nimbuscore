@@ -79,18 +79,95 @@ func (PodPhase) EnumDescriptor() ([]byte, []int) {
 	return file_pod_proto_rawDescGZIP(), []int{0}
 }
 
+type SecurityContext struct {
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	SeccompProfile           string                 `protobuf:"bytes,1,opt,name=seccomp_profile,json=seccompProfile,proto3" json:"seccomp_profile,omitempty"`
+	AddCapabilities          []string               `protobuf:"bytes,2,rep,name=add_capabilities,json=addCapabilities,proto3" json:"add_capabilities,omitempty"`
+	Privileged               bool                   `protobuf:"varint,3,opt,name=privileged,proto3" json:"privileged,omitempty"`
+	AllowPrivilegeEscalation bool                   `protobuf:"varint,4,opt,name=allow_privilege_escalation,json=allowPrivilegeEscalation,proto3" json:"allow_privilege_escalation,omitempty"`
+	RunAsNonRoot             bool                   `protobuf:"varint,5,opt,name=run_as_non_root,json=runAsNonRoot,proto3" json:"run_as_non_root,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *SecurityContext) Reset() {
+	*x = SecurityContext{}
+	mi := &file_pod_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SecurityContext) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SecurityContext) ProtoMessage() {}
+
+func (x *SecurityContext) ProtoReflect() protoreflect.Message {
+	mi := &file_pod_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SecurityContext.ProtoReflect.Descriptor instead.
+func (*SecurityContext) Descriptor() ([]byte, []int) {
+	return file_pod_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *SecurityContext) GetSeccompProfile() string {
+	if x != nil {
+		return x.SeccompProfile
+	}
+	return ""
+}
+
+func (x *SecurityContext) GetAddCapabilities() []string {
+	if x != nil {
+		return x.AddCapabilities
+	}
+	return nil
+}
+
+func (x *SecurityContext) GetPrivileged() bool {
+	if x != nil {
+		return x.Privileged
+	}
+	return false
+}
+
+func (x *SecurityContext) GetAllowPrivilegeEscalation() bool {
+	if x != nil {
+		return x.AllowPrivilegeEscalation
+	}
+	return false
+}
+
+func (x *SecurityContext) GetRunAsNonRoot() bool {
+	if x != nil {
+		return x.RunAsNonRoot
+	}
+	return false
+}
+
 type Container struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Image         string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
-	Resources     *ResourceRequirements  `protobuf:"bytes,3,opt,name=resources,proto3" json:"resources,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Image           string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	Resources       *ResourceRequirements  `protobuf:"bytes,3,opt,name=resources,proto3" json:"resources,omitempty"`
+	SecurityContext *SecurityContext       `protobuf:"bytes,4,opt,name=security_context,json=securityContext,proto3" json:"security_context,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Container) Reset() {
 	*x = Container{}
-	mi := &file_pod_proto_msgTypes[0]
+	mi := &file_pod_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -102,7 +179,7 @@ func (x *Container) String() string {
 func (*Container) ProtoMessage() {}
 
 func (x *Container) ProtoReflect() protoreflect.Message {
-	mi := &file_pod_proto_msgTypes[0]
+	mi := &file_pod_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -115,7 +192,7 @@ func (x *Container) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Container.ProtoReflect.Descriptor instead.
 func (*Container) Descriptor() ([]byte, []int) {
-	return file_pod_proto_rawDescGZIP(), []int{0}
+	return file_pod_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Container) GetName() string {
@@ -139,6 +216,13 @@ func (x *Container) GetResources() *ResourceRequirements {
 	return nil
 }
 
+func (x *Container) GetSecurityContext() *SecurityContext {
+	if x != nil {
+		return x.SecurityContext
+	}
+	return nil
+}
+
 type PodSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Containers    []*Container           `protobuf:"bytes,1,rep,name=containers,proto3" json:"containers,omitempty"`
@@ -149,7 +233,7 @@ type PodSpec struct {
 
 func (x *PodSpec) Reset() {
 	*x = PodSpec{}
-	mi := &file_pod_proto_msgTypes[1]
+	mi := &file_pod_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -161,7 +245,7 @@ func (x *PodSpec) String() string {
 func (*PodSpec) ProtoMessage() {}
 
 func (x *PodSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_pod_proto_msgTypes[1]
+	mi := &file_pod_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -174,7 +258,7 @@ func (x *PodSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PodSpec.ProtoReflect.Descriptor instead.
 func (*PodSpec) Descriptor() ([]byte, []int) {
-	return file_pod_proto_rawDescGZIP(), []int{1}
+	return file_pod_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *PodSpec) GetContainers() []*Container {
@@ -202,7 +286,7 @@ type PodStatus struct {
 
 func (x *PodStatus) Reset() {
 	*x = PodStatus{}
-	mi := &file_pod_proto_msgTypes[2]
+	mi := &file_pod_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -214,7 +298,7 @@ func (x *PodStatus) String() string {
 func (*PodStatus) ProtoMessage() {}
 
 func (x *PodStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_pod_proto_msgTypes[2]
+	mi := &file_pod_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -227,7 +311,7 @@ func (x *PodStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PodStatus.ProtoReflect.Descriptor instead.
 func (*PodStatus) Descriptor() ([]byte, []int) {
-	return file_pod_proto_rawDescGZIP(), []int{2}
+	return file_pod_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *PodStatus) GetPhase() PodPhase {
@@ -262,7 +346,7 @@ type Pod struct {
 
 func (x *Pod) Reset() {
 	*x = Pod{}
-	mi := &file_pod_proto_msgTypes[3]
+	mi := &file_pod_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -274,7 +358,7 @@ func (x *Pod) String() string {
 func (*Pod) ProtoMessage() {}
 
 func (x *Pod) ProtoReflect() protoreflect.Message {
-	mi := &file_pod_proto_msgTypes[3]
+	mi := &file_pod_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -287,7 +371,7 @@ func (x *Pod) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Pod.ProtoReflect.Descriptor instead.
 func (*Pod) Descriptor() ([]byte, []int) {
-	return file_pod_proto_rawDescGZIP(), []int{3}
+	return file_pod_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Pod) GetMetadata() *ObjectMeta {
@@ -315,11 +399,20 @@ var File_pod_proto protoreflect.FileDescriptor
 
 const file_pod_proto_rawDesc = "" +
 	"\n" +
-	"\tpod.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\"x\n" +
+	"\tpod.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\"\xea\x01\n" +
+	"\x0fSecurityContext\x12'\n" +
+	"\x0fseccomp_profile\x18\x01 \x01(\tR\x0eseccompProfile\x12)\n" +
+	"\x10add_capabilities\x18\x02 \x03(\tR\x0faddCapabilities\x12\x1e\n" +
+	"\n" +
+	"privileged\x18\x03 \x01(\bR\n" +
+	"privileged\x12<\n" +
+	"\x1aallow_privilege_escalation\x18\x04 \x01(\bR\x18allowPrivilegeEscalation\x12%\n" +
+	"\x0frun_as_non_root\x18\x05 \x01(\bR\frunAsNonRoot\"\xc3\x01\n" +
 	"\tContainer\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12A\n" +
-	"\tresources\x18\x03 \x01(\v2#.nimbuscore.v1.ResourceRequirementsR\tresources\"`\n" +
+	"\tresources\x18\x03 \x01(\v2#.nimbuscore.v1.ResourceRequirementsR\tresources\x12I\n" +
+	"\x10security_context\x18\x04 \x01(\v2\x1e.nimbuscore.v1.SecurityContextR\x0fsecurityContext\"`\n" +
 	"\aPodSpec\x128\n" +
 	"\n" +
 	"containers\x18\x01 \x03(\v2\x18.nimbuscore.v1.ContainerR\n" +
@@ -356,30 +449,32 @@ func file_pod_proto_rawDescGZIP() []byte {
 }
 
 var file_pod_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pod_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_pod_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_pod_proto_goTypes = []any{
 	(PodPhase)(0),                // 0: nimbuscore.v1.PodPhase
-	(*Container)(nil),            // 1: nimbuscore.v1.Container
-	(*PodSpec)(nil),              // 2: nimbuscore.v1.PodSpec
-	(*PodStatus)(nil),            // 3: nimbuscore.v1.PodStatus
-	(*Pod)(nil),                  // 4: nimbuscore.v1.Pod
-	(*ResourceRequirements)(nil), // 5: nimbuscore.v1.ResourceRequirements
-	(*Condition)(nil),            // 6: nimbuscore.v1.Condition
-	(*ObjectMeta)(nil),           // 7: nimbuscore.v1.ObjectMeta
+	(*SecurityContext)(nil),      // 1: nimbuscore.v1.SecurityContext
+	(*Container)(nil),            // 2: nimbuscore.v1.Container
+	(*PodSpec)(nil),              // 3: nimbuscore.v1.PodSpec
+	(*PodStatus)(nil),            // 4: nimbuscore.v1.PodStatus
+	(*Pod)(nil),                  // 5: nimbuscore.v1.Pod
+	(*ResourceRequirements)(nil), // 6: nimbuscore.v1.ResourceRequirements
+	(*Condition)(nil),            // 7: nimbuscore.v1.Condition
+	(*ObjectMeta)(nil),           // 8: nimbuscore.v1.ObjectMeta
 }
 var file_pod_proto_depIdxs = []int32{
-	5, // 0: nimbuscore.v1.Container.resources:type_name -> nimbuscore.v1.ResourceRequirements
-	1, // 1: nimbuscore.v1.PodSpec.containers:type_name -> nimbuscore.v1.Container
-	0, // 2: nimbuscore.v1.PodStatus.phase:type_name -> nimbuscore.v1.PodPhase
-	6, // 3: nimbuscore.v1.PodStatus.conditions:type_name -> nimbuscore.v1.Condition
-	7, // 4: nimbuscore.v1.Pod.metadata:type_name -> nimbuscore.v1.ObjectMeta
-	2, // 5: nimbuscore.v1.Pod.spec:type_name -> nimbuscore.v1.PodSpec
-	3, // 6: nimbuscore.v1.Pod.status:type_name -> nimbuscore.v1.PodStatus
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	6, // 0: nimbuscore.v1.Container.resources:type_name -> nimbuscore.v1.ResourceRequirements
+	1, // 1: nimbuscore.v1.Container.security_context:type_name -> nimbuscore.v1.SecurityContext
+	2, // 2: nimbuscore.v1.PodSpec.containers:type_name -> nimbuscore.v1.Container
+	0, // 3: nimbuscore.v1.PodStatus.phase:type_name -> nimbuscore.v1.PodPhase
+	7, // 4: nimbuscore.v1.PodStatus.conditions:type_name -> nimbuscore.v1.Condition
+	8, // 5: nimbuscore.v1.Pod.metadata:type_name -> nimbuscore.v1.ObjectMeta
+	3, // 6: nimbuscore.v1.Pod.spec:type_name -> nimbuscore.v1.PodSpec
+	4, // 7: nimbuscore.v1.Pod.status:type_name -> nimbuscore.v1.PodStatus
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_pod_proto_init() }
@@ -394,7 +489,7 @@ func file_pod_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pod_proto_rawDesc), len(file_pod_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

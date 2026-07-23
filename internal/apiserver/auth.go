@@ -11,13 +11,15 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
+
+	"github.com/gh0st-nemesis/nimbuscore/internal/rbac"
 )
 
 var unauthenticatedMethods = map[string]bool{
 	"/nimbuscore.v1.IdentityService/RequestSVID": true,
 }
 
-func AuthInterceptor(expect spiffeid.Matcher) grpc.UnaryServerInterceptor {
+func AuthInterceptor(expectTrustDomain spiffeid.Matcher, authz *rbac.Authorizer) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if unauthenticatedMethods[info.FullMethod] {
 			return handler(ctx, req)
@@ -27,9 +29,18 @@ func AuthInterceptor(expect spiffeid.Matcher) grpc.UnaryServerInterceptor {
 		if err != nil {
 			return nil, status.Errorf(codes.Unauthenticated, "%v", err)
 		}
-		if err := expect(id); err != nil {
+		if err := expectTrustDomain(id); err != nil {
 			return nil, status.Errorf(codes.PermissionDenied, "identity %s rejected: %v", id, err)
 		}
+
+		rv, ok := methodResourceVerb[info.FullMethod]
+		if !ok {
+			return nil, status.Errorf(codes.PermissionDenied, "method %s has no RBAC mapping — denied by default", info.FullMethod)
+		}
+		if !authz.Allow(id.Path(), rv.Resource, rv.Verb) {
+			return nil, status.Errorf(codes.PermissionDenied, "identity %s is not authorized to %s %s", id, rv.Verb, rv.Resource)
+		}
+
 		return handler(ctx, req)
 	}
 }

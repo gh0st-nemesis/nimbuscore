@@ -7,17 +7,22 @@ import (
 	"google.golang.org/grpc/status"
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
+	"github.com/gh0st-nemesis/nimbuscore/internal/admission"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
 )
 
 type podService struct {
 	v1.UnimplementedPodServiceServer
-	pods *registry.Registry[*v1.Pod]
+	pods      *registry.Registry[*v1.Pod]
+	admission *admission.Chain
 }
 
-func NewPodService(s store.Store) v1.PodServiceServer {
-	return &podService{pods: registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} })}
+func NewPodService(s store.Store, admissionChain *admission.Chain) v1.PodServiceServer {
+	return &podService{
+		pods:      registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} }),
+		admission: admissionChain,
+	}
 }
 
 func (svc *podService) CreatePod(ctx context.Context, req *v1.CreatePodRequest) (*v1.Pod, error) {
@@ -26,6 +31,11 @@ func (svc *podService) CreatePod(ctx context.Context, req *v1.CreatePodRequest) 
 	if meta.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "pod.metadata.name is required")
 	}
+
+	if err := svc.admission.Admit(ctx, &admission.Request{Namespace: meta.GetNamespace(), Spec: pod.GetSpec(), Replicas: 1}); err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
+	}
+
 	if err := svc.pods.Put(ctx, meta.GetNamespace(), meta.GetName(), pod); err != nil {
 		return nil, status.Errorf(codes.Internal, "create pod: %v", err)
 	}

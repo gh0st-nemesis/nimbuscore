@@ -7,6 +7,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
+	"github.com/gh0st-nemesis/nimbuscore/internal/admission"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
 )
@@ -14,10 +15,14 @@ import (
 type deploymentService struct {
 	v1.UnimplementedDeploymentServiceServer
 	deployments *registry.Registry[*v1.Deployment]
+	admission   *admission.Chain
 }
 
-func NewDeploymentService(s store.Store) v1.DeploymentServiceServer {
-	return &deploymentService{deployments: registry.New(s, "deployments", func() *v1.Deployment { return &v1.Deployment{} })}
+func NewDeploymentService(s store.Store, admissionChain *admission.Chain) v1.DeploymentServiceServer {
+	return &deploymentService{
+		deployments: registry.New(s, "deployments", func() *v1.Deployment { return &v1.Deployment{} }),
+		admission:   admissionChain,
+	}
 }
 
 func (svc *deploymentService) CreateDeployment(ctx context.Context, req *v1.CreateDeploymentRequest) (*v1.Deployment, error) {
@@ -26,6 +31,12 @@ func (svc *deploymentService) CreateDeployment(ctx context.Context, req *v1.Crea
 	if meta.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "deployment.metadata.name is required")
 	}
+
+	admitReq := &admission.Request{Namespace: meta.GetNamespace(), Spec: d.GetSpec().GetTemplate(), Replicas: d.GetSpec().GetReplicas()}
+	if err := svc.admission.Admit(ctx, admitReq); err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
+	}
+
 	if err := svc.deployments.Put(ctx, meta.GetNamespace(), meta.GetName(), d); err != nil {
 		return nil, status.Errorf(codes.Internal, "create deployment: %v", err)
 	}

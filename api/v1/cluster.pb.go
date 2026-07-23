@@ -27,6 +27,7 @@ const (
 	SVIDRole_SVID_ROLE_UNSPECIFIED   SVIDRole = 0
 	SVIDRole_SVID_ROLE_NODE          SVIDRole = 1
 	SVIDRole_SVID_ROLE_CONTROL_PLANE SVIDRole = 2
+	SVIDRole_SVID_ROLE_CLIENT        SVIDRole = 3
 )
 
 // Enum value maps for SVIDRole.
@@ -35,11 +36,13 @@ var (
 		0: "SVID_ROLE_UNSPECIFIED",
 		1: "SVID_ROLE_NODE",
 		2: "SVID_ROLE_CONTROL_PLANE",
+		3: "SVID_ROLE_CLIENT",
 	}
 	SVIDRole_value = map[string]int32{
 		"SVID_ROLE_UNSPECIFIED":   0,
 		"SVID_ROLE_NODE":          1,
 		"SVID_ROLE_CONTROL_PLANE": 2,
+		"SVID_ROLE_CLIENT":        3,
 	}
 )
 
@@ -139,11 +142,12 @@ func (x *RequestSVIDRequest) GetRole() SVIDRole {
 }
 
 type RequestSVIDResponse struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	CertDer        []byte                 `protobuf:"bytes,1,opt,name=cert_der,json=certDer,proto3" json:"cert_der,omitempty"`
-	TrustBundleDer []byte                 `protobuf:"bytes,2,opt,name=trust_bundle_der,json=trustBundleDer,proto3" json:"trust_bundle_der,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	CertDer           []byte                 `protobuf:"bytes,1,opt,name=cert_der,json=certDer,proto3" json:"cert_der,omitempty"`
+	TrustBundleDer    []byte                 `protobuf:"bytes,2,opt,name=trust_bundle_der,json=trustBundleDer,proto3" json:"trust_bundle_der,omitempty"`
+	DataEncryptionKey []byte                 `protobuf:"bytes,3,opt,name=data_encryption_key,json=dataEncryptionKey,proto3" json:"data_encryption_key,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *RequestSVIDResponse) Reset() {
@@ -186,6 +190,13 @@ func (x *RequestSVIDResponse) GetCertDer() []byte {
 func (x *RequestSVIDResponse) GetTrustBundleDer() []byte {
 	if x != nil {
 		return x.TrustBundleDer
+	}
+	return nil
+}
+
+func (x *RequestSVIDResponse) GetDataEncryptionKey() []byte {
+	if x != nil {
+		return x.DataEncryptionKey
 	}
 	return nil
 }
@@ -288,18 +299,20 @@ const file_cluster_proto_rawDesc = "" +
 	"join_token\x18\x01 \x01(\tR\tjoinToken\x12\x17\n" +
 	"\acsr_der\x18\x02 \x01(\fR\x06csrDer\x12\x1b\n" +
 	"\tnode_name\x18\x03 \x01(\tR\bnodeName\x12+\n" +
-	"\x04role\x18\x04 \x01(\x0e2\x17.nimbuscore.v1.SVIDRoleR\x04role\"Z\n" +
+	"\x04role\x18\x04 \x01(\x0e2\x17.nimbuscore.v1.SVIDRoleR\x04role\"\x8a\x01\n" +
 	"\x13RequestSVIDResponse\x12\x19\n" +
 	"\bcert_der\x18\x01 \x01(\fR\acertDer\x12(\n" +
-	"\x10trust_bundle_der\x18\x02 \x01(\fR\x0etrustBundleDer\"G\n" +
+	"\x10trust_bundle_der\x18\x02 \x01(\fR\x0etrustBundleDer\x12.\n" +
+	"\x13data_encryption_key\x18\x03 \x01(\fR\x11dataEncryptionKey\"G\n" +
 	"\x0fJoinRaftRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
 	"\traft_addr\x18\x02 \x01(\tR\braftAddr\"\x12\n" +
-	"\x10JoinRaftResponse*V\n" +
+	"\x10JoinRaftResponse*l\n" +
 	"\bSVIDRole\x12\x19\n" +
 	"\x15SVID_ROLE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eSVID_ROLE_NODE\x10\x01\x12\x1b\n" +
-	"\x17SVID_ROLE_CONTROL_PLANE\x10\x022g\n" +
+	"\x17SVID_ROLE_CONTROL_PLANE\x10\x02\x12\x14\n" +
+	"\x10SVID_ROLE_CLIENT\x10\x032g\n" +
 	"\x0fIdentityService\x12T\n" +
 	"\vRequestSVID\x12!.nimbuscore.v1.RequestSVIDRequest\x1a\".nimbuscore.v1.RequestSVIDResponse2[\n" +
 	"\fAdminService\x12K\n" +

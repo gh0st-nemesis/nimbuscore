@@ -12,6 +12,7 @@ enum SVIDRole {
   SVID_ROLE_UNSPECIFIED = 0;
   SVID_ROLE_NODE = 1;
   SVID_ROLE_CONTROL_PLANE = 2;
+  SVID_ROLE_CLIENT = 3;
 }
 
 message RequestSVIDRequest {
@@ -24,6 +25,7 @@ message RequestSVIDRequest {
 message RequestSVIDResponse {
   bytes cert_der = 1;
   bytes trust_bundle_der = 2;
+  bytes data_encryption_key = 3;
 }
 
 service AdminService {

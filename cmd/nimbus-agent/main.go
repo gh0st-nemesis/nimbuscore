@@ -41,7 +41,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	svid, err := identity.Enroll(ctx, identity.EnrollConfig{
+	svid, _, err := identity.Enroll(ctx, identity.EnrollConfig{
 		ControlPlaneAddr: *controlPlaneAddr,
 		JoinToken:        *joinToken,
 		Name:             *nodeName,

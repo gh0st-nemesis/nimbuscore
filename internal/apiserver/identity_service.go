@@ -19,13 +19,14 @@ import (
 
 type identityService struct {
 	v1.UnimplementedIdentityServiceServer
-	ca        *identity.CA
-	joinToken string
-	svidTTL   time.Duration
+	ca                *identity.CA
+	joinToken         string
+	svidTTL           time.Duration
+	dataEncryptionKey []byte
 }
 
-func NewIdentityService(ca *identity.CA, joinToken string, svidTTL time.Duration) v1.IdentityServiceServer {
-	return &identityService{ca: ca, joinToken: joinToken, svidTTL: svidTTL}
+func NewIdentityService(ca *identity.CA, joinToken string, svidTTL time.Duration, dataEncryptionKey []byte) v1.IdentityServiceServer {
+	return &identityService{ca: ca, joinToken: joinToken, svidTTL: svidTTL, dataEncryptionKey: dataEncryptionKey}
 }
 
 func (svc *identityService) RequestSVID(_ context.Context, req *v1.RequestSVIDRequest) (*v1.RequestSVIDResponse, error) {
@@ -54,8 +55,10 @@ func (svc *identityService) RequestSVID(_ context.Context, req *v1.RequestSVIDRe
 		idPath = fmt.Sprintf("/node/%s", req.GetNodeName())
 	case v1.SVIDRole_SVID_ROLE_CONTROL_PLANE:
 		idPath = fmt.Sprintf("/control-plane/%s", req.GetNodeName())
+	case v1.SVIDRole_SVID_ROLE_CLIENT:
+		idPath = fmt.Sprintf("/client/%s", req.GetNodeName())
 	default:
-		return nil, status.Error(codes.InvalidArgument, "role must be SVID_ROLE_NODE or SVID_ROLE_CONTROL_PLANE")
+		return nil, status.Error(codes.InvalidArgument, "role must be SVID_ROLE_NODE, SVID_ROLE_CONTROL_PLANE, or SVID_ROLE_CLIENT")
 	}
 
 	id, err := spiffeid.FromPath(svc.ca.TrustDomain(), idPath)
@@ -68,8 +71,12 @@ func (svc *identityService) RequestSVID(_ context.Context, req *v1.RequestSVIDRe
 		return nil, status.Errorf(codes.Internal, "issue SVID: %v", err)
 	}
 
-	return &v1.RequestSVIDResponse{
+	resp := &v1.RequestSVIDResponse{
 		CertDer:        cert.Raw,
 		TrustBundleDer: svc.ca.Cert().Raw,
-	}, nil
+	}
+	if req.GetRole() == v1.SVIDRole_SVID_ROLE_CONTROL_PLANE {
+		resp.DataEncryptionKey = svc.dataEncryptionKey
+	}
+	return resp, nil
 }

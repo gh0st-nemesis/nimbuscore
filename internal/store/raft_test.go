@@ -1,8 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -62,6 +66,55 @@ func TestRaftStoreSingleNodePutGet(t *testing.T) {
 	}
 	if _, err := s.Get(ctx, "/registry/pods/default/web-0"); err != ErrNotFound {
 		t.Fatalf("Get after delete = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRaftStoreEncryptsAtRest(t *testing.T) {
+	const secret = "super-secret-payload-nobody-should-see-on-disk"
+
+	key := make([]byte, EncryptionKeySize)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	dataDir := t.TempDir()
+	cfg := RaftConfig{
+		NodeID:        "node-1",
+		BindAddr:      freeAddr(t),
+		DataDir:       dataDir,
+		Bootstrap:     true,
+		EncryptionKey: key,
+	}
+
+	s, err := NewRaftStore(cfg)
+	if err != nil {
+		t.Fatalf("NewRaftStore: %v", err)
+	}
+	waitForLeader(t, s)
+
+	ctx := context.Background()
+	if err := s.Put(ctx, "/registry/pods/default/web-0", []byte(secret)); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	got, err := s.Get(ctx, "/registry/pods/default/web-0")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if string(got) != secret {
+		t.Fatalf("Get = %q, want %q", got, secret)
+	}
+
+	if err := s.Shutdown(); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dataDir, "raft-log.bolt"))
+	if err != nil {
+		t.Fatalf("read log store file: %v", err)
+	}
+	if bytes.Contains(raw, []byte(secret)) {
+		t.Fatal("plaintext secret found in the on-disk Raft log — encryption at rest is not working")
 	}
 }
 
