@@ -21,9 +21,7 @@
 
 NimbusCore reprend le modèle mental de Kubernetes — déclaratif, API-centrique, auto-réparateur —
 en corrigeant ses angles morts connus : sécurité permissive par défaut, empilement d'outils tiers,
-et overhead d'un control plane généraliste. Le design complet (architecture, sécurité, roadmap en 9
-phases, stack technique) est dans
-[`NimbusCore-document-de-conception.pdf`](./NimbusCore-document-de-conception.pdf).
+et overhead d'un control plane généraliste. 
 
 Ce dépôt contient le code : **les 9 phases** de la roadmap (section 08) sont implémentées — un cluster
 réel, multi-processus, avec consensus Raft, identités mTLS, admission control non contournable, RBAC
