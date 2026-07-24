@@ -178,6 +178,136 @@ func TestDashboardCreateDeploymentViaAPI(t *testing.T) {
 	}
 }
 
+func TestDashboardCreateDeploymentWithPortAutoCreatesService(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"web","namespace":"default","image":"nginx:alpine","replicas":1,"port":80}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var envelope struct {
+		Service struct {
+			Spec struct {
+				NodePort int32 `json:"nodePort"`
+			} `json:"spec"`
+		} `json:"service"`
+		ServiceError string `json:"serviceError"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if envelope.ServiceError != "" {
+		t.Fatalf("serviceError = %q, want none", envelope.ServiceError)
+	}
+	if envelope.Service.Spec.NodePort < 30000 || envelope.Service.Spec.NodePort > 32767 {
+		t.Errorf("service.spec.nodePort = %d, want a value in the NodePort range", envelope.Service.Spec.NodePort)
+	}
+
+	svcResp, err := http.Get(srv.URL + "/api/services")
+	if err != nil {
+		t.Fatalf("GET /api/services: %v", err)
+	}
+	defer svcResp.Body.Close()
+	var svcList struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(svcResp.Body).Decode(&svcList); err != nil {
+		t.Fatalf("decode services: %v", err)
+	}
+	if len(svcList.Items) != 1 || svcList.Items[0].Metadata.Name != "web" {
+		t.Errorf("services = %+v, want one service named web", svcList.Items)
+	}
+}
+
+func TestDashboardDeleteDeploymentRemovesIt(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"web","image":"nginx:alpine"}`)
+	if _, err := http.Post(srv.URL+"/api/deployments", "application/json", body); err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/deployments?namespace=default&name=web", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+
+	listResp, err := http.Get(srv.URL + "/api/deployments")
+	if err != nil {
+		t.Fatalf("GET /api/deployments: %v", err)
+	}
+	defer listResp.Body.Close()
+	var decoded struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(decoded.Items) != 0 {
+		t.Errorf("got %d deployments after delete, want 0", len(decoded.Items))
+	}
+}
+
+func TestDashboardScaleDeploymentUpdatesReplicas(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"web","image":"nginx:alpine","replicas":3}`)
+	if _, err := http.Post(srv.URL+"/api/deployments", "application/json", body); err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+
+	patchBody := strings.NewReader(`{"namespace":"default","name":"web","replicas":0}`)
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments", patchBody)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	listResp, err := http.Get(srv.URL + "/api/deployments")
+	if err != nil {
+		t.Fatalf("GET /api/deployments: %v", err)
+	}
+	defer listResp.Body.Close()
+	var decoded struct {
+		Items []struct {
+			Spec struct {
+				Replicas int32 `json:"replicas"`
+			} `json:"spec"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(decoded.Items) != 1 || decoded.Items[0].Spec.Replicas != 0 {
+		t.Errorf("deployments = %+v, want one deployment with replicas=0", decoded.Items)
+	}
+}
+
 func TestDashboardCreateDeploymentRejectsMissingImage(t *testing.T) {
 	handler, _, _ := newTestHandler(t)
 	srv := httptest.NewServer(handler)

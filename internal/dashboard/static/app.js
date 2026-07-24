@@ -113,21 +113,36 @@ async function refreshPods() {
   });
 }
 
+async function deleteService(namespace, name) {
+  if (!confirm(`Delete service ${namespace}/${name}?`)) return;
+  await fetchJSON(`/api/services?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  await refreshServices();
+}
+
 async function refreshServices() {
   const data = await fetchJSON("/api/services");
   const items = data.items || [];
   document.getElementById("services-count").textContent = items.length;
-  setRows("services-table", items, 4, (s) => {
+  setRows("services-table", items, 5, (s) => {
     const tr = document.createElement("tr");
     const spec = s.spec || {};
     const status = s.status || {};
+    const namespace = s.metadata?.namespace || "";
+    const name = s.metadata?.name || "";
     const endpoints = (status.endpoints || [])
       .map((e) => e.nodeIp + ":" + e.nodePort)
       .join(", ") || "—";
-    tr.appendChild(el("td", null, s.metadata?.namespace || ""));
-    tr.appendChild(el("td", null, s.metadata?.name || ""));
+    tr.appendChild(el("td", null, namespace));
+    tr.appendChild(el("td", null, name));
     tr.appendChild(el("td", null, String(spec.port || 0)));
     tr.appendChild(el("td", null, endpoints));
+    const actionsTd = document.createElement("td");
+    const deleteBtn = el("button", "btn-ghost btn-small", "Delete");
+    deleteBtn.addEventListener("click", () => deleteService(namespace, name));
+    actionsTd.appendChild(deleteBtn);
+    tr.appendChild(actionsTd);
     return tr;
   });
 }
@@ -150,20 +165,57 @@ async function refreshFinops() {
   }
 }
 
+const lastKnownReplicas = {};
+
+async function deleteDeployment(namespace, name) {
+  if (!confirm(`Delete deployment ${namespace}/${name}? This also removes its pods.`)) return;
+  await fetchJSON(`/api/deployments?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  await Promise.allSettled([refreshDeployments(), refreshCICD()]);
+}
+
+async function scaleDeployment(namespace, name, replicas) {
+  await fetchJSON("/api/deployments", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ namespace, name, replicas }),
+  });
+  await Promise.allSettled([refreshDeployments(), refreshCICD()]);
+}
+
 async function refreshDeployments() {
   const data = await fetchJSON("/api/deployments");
   const items = data.items || [];
   document.getElementById("deployments-count").textContent = items.length;
-  setRows("deployments-table", items, 5, (d) => {
+  setRows("deployments-table", items, 6, (d) => {
     const tr = document.createElement("tr");
     const spec = d.spec || {};
     const status = d.status || {};
+    const namespace = d.metadata?.namespace || "";
+    const name = d.metadata?.name || "";
+    const replicas = spec.replicas || 0;
+    const key = namespace + "/" + name;
+    if (replicas > 0) lastKnownReplicas[key] = replicas;
     const image = (spec.template?.containers || [])[0]?.image || "—";
-    tr.appendChild(el("td", null, d.metadata?.namespace || ""));
-    tr.appendChild(el("td", null, d.metadata?.name || ""));
+    tr.appendChild(el("td", null, namespace));
+    tr.appendChild(el("td", null, name));
     tr.appendChild(el("td", null, image));
-    tr.appendChild(el("td", null, String(spec.replicas || 0)));
+    tr.appendChild(el("td", null, String(replicas)));
     tr.appendChild(el("td", null, String(status.readyReplicas || 0)));
+
+    const actionsTd = document.createElement("td");
+    actionsTd.className = "row-actions";
+    const toggleBtn = el("button", "btn-ghost btn-small", replicas > 0 ? "Stop" : "Start");
+    toggleBtn.addEventListener("click", () => {
+      const target = replicas > 0 ? 0 : lastKnownReplicas[key] || 1;
+      scaleDeployment(namespace, name, target);
+    });
+    const deleteBtn = el("button", "btn-ghost btn-small", "Delete");
+    deleteBtn.addEventListener("click", () => deleteDeployment(namespace, name));
+    actionsTd.appendChild(toggleBtn);
+    actionsTd.appendChild(deleteBtn);
+    tr.appendChild(actionsTd);
     return tr;
   });
 }
@@ -201,17 +253,34 @@ function initDeploymentForm() {
     };
 
     try {
-      await fetchJSON("/api/deployments", {
+      const result = await fetchJSON("/api/deployments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       modal.classList.remove("open");
-      await Promise.allSettled([refreshDeployments(), refreshCICD()]);
+      await Promise.allSettled([refreshDeployments(), refreshCICD(), refreshServices()]);
+
+      if (result.service) {
+        const nodePort = result.service.spec?.nodePort;
+        showToast(`${payload.name}: exposed on NodePort ${nodePort} (see Services panel for node IPs).`);
+      } else if (result.serviceError) {
+        showToast(`${payload.name}: created, but could not expose port ${payload.port}: ${result.serviceError}`, true);
+      }
     } catch (err) {
       errorEl.textContent = err.message || String(err);
     }
   });
+}
+
+function showToast(message, isError) {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.className = "toast show" + (isError ? " error" : "");
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => {
+    toast.className = "toast";
+  }, 6000);
 }
 
 function renderGitOpsPanel(gitops) {

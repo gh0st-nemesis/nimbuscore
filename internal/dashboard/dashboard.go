@@ -97,6 +97,12 @@ func (cfg Config) handleDeployments(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		cfg.handleCreateDeployment(w, r)
 
+	case http.MethodPatch:
+		cfg.handleScaleDeployment(w, r)
+
+	case http.MethodDelete:
+		cfg.handleDeleteDeployment(w, r)
+
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -165,16 +171,119 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeProto(w, created)
-}
 
-func (cfg Config) handleServices(w http.ResponseWriter, r *http.Request) {
-	resp, err := cfg.Services.ListServices(r.Context(), &v1.ListServicesRequest{})
+	depJSON, err := protojson.Marshal(created)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeProto(w, resp)
+	envelope := map[string]json.RawMessage{"deployment": depJSON}
+
+	if req.Port > 0 {
+		svcObj := &v1.Service{
+			Metadata: &v1.ObjectMeta{Name: req.Name, Namespace: req.Namespace, Labels: map[string]string{"app": req.Name}},
+			Spec:     &v1.ServiceSpec{Selector: map[string]string{"app": req.Name}, Port: req.Port, TargetPort: req.Port},
+		}
+		createdSvc, svcErr := cfg.Services.CreateService(r.Context(), &v1.CreateServiceRequest{Service: svcObj})
+		if svcErr != nil {
+			if b, err := json.Marshal(svcErr.Error()); err == nil {
+				envelope["serviceError"] = b
+			}
+		} else if svcJSON, err := protojson.Marshal(createdSvc); err == nil {
+			envelope["service"] = svcJSON
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(envelope) //nolint:errcheck
+}
+
+func (cfg Config) handleDeleteDeployment(w http.ResponseWriter, r *http.Request) {
+	namespace := r.URL.Query().Get("namespace")
+	if namespace == "" {
+		namespace = "default"
+	}
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "name query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := cfg.DeploymentSvc.DeleteDeployment(r.Context(), &v1.DeleteDeploymentRequest{Namespace: namespace, Name: name}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type scaleDeploymentRequest struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Replicas  int32  `json:"replicas"`
+}
+
+func (cfg Config) handleScaleDeployment(w http.ResponseWriter, r *http.Request) {
+	var req scaleDeploymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
+	if req.Replicas < 0 {
+		http.Error(w, "replicas must be >= 0", http.StatusBadRequest)
+		return
+	}
+
+	current, err := cfg.DeploymentSvc.GetDeployment(r.Context(), &v1.GetDeploymentRequest{Namespace: req.Namespace, Name: req.Name})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	current.Spec.Replicas = req.Replicas
+
+	updated, err := cfg.DeploymentSvc.CreateDeployment(r.Context(), &v1.CreateDeploymentRequest{Deployment: current})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeProto(w, updated)
+}
+
+func (cfg Config) handleServices(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		resp, err := cfg.Services.ListServices(r.Context(), &v1.ListServicesRequest{})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeProto(w, resp)
+
+	case http.MethodDelete:
+		namespace := r.URL.Query().Get("namespace")
+		if namespace == "" {
+			namespace = "default"
+		}
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "name query parameter is required", http.StatusBadRequest)
+			return
+		}
+		if _, err := cfg.Services.DeleteService(r.Context(), &v1.DeleteServiceRequest{Namespace: namespace, Name: name}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (cfg Config) handleFinops(w http.ResponseWriter, r *http.Request) {
