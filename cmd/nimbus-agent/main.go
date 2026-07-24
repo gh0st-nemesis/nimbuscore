@@ -74,6 +74,13 @@ func main() {
 	log.Printf("agent: identity %s", selfID)
 	expectControlPlane := spiffeid.MatchMemberOf(selfID.TrustDomain())
 
+	identity.StartReenrollRotateLoop(ctx, svid, identity.EnrollConfig{
+		ControlPlaneAddr: *controlPlaneAddr,
+		JoinToken:        *joinToken,
+		Name:             *nodeName,
+		Role:             v1.SVIDRole_SVID_ROLE_NODE,
+	}, identity.DefaultSVIDTTL)
+
 	breaker := mesh.NewCircuitBreaker(5, 30*time.Second)
 	conn, err := grpc.NewClient(*controlPlaneAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(svid.ClientTLSConfig(expectControlPlane))),

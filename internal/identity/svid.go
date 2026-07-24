@@ -14,22 +14,19 @@ import (
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 )
 
-type atomicCert struct {
-	p atomic.Pointer[x509.Certificate]
+type svidMaterial struct {
+	key  *ecdsa.PrivateKey
+	cert *x509.Certificate
 }
 
-func (a *atomicCert) set(cert *x509.Certificate) { a.p.Store(cert) }
-func (a *atomicCert) get() *x509.Certificate     { return a.p.Load() }
-
 type SVID struct {
-	key    *ecdsa.PrivateKey
-	cert   atomicCert
-	bundle *x509.CertPool
+	material atomic.Pointer[svidMaterial]
+	bundle   *x509.CertPool
 }
 
 func NewSVID(key *ecdsa.PrivateKey, cert *x509.Certificate, bundle *x509.CertPool) *SVID {
-	s := &SVID{key: key, bundle: bundle}
-	s.cert.set(cert)
+	s := &SVID{bundle: bundle}
+	s.material.Store(&svidMaterial{key: key, cert: cert})
 	return s
 }
 
@@ -58,12 +55,17 @@ func GenerateCSR(commonName string) (csrDER []byte, key *ecdsa.PrivateKey, err e
 	return csrDER, key, nil
 }
 
-func (s *SVID) Rotate(cert *x509.Certificate) {
-	s.cert.set(cert)
+func (s *SVID) Rotate(key *ecdsa.PrivateKey, cert *x509.Certificate) {
+	s.material.Store(&svidMaterial{key: key, cert: cert})
+}
+
+func (s *SVID) Materials() (*ecdsa.PrivateKey, *x509.Certificate) {
+	m := s.material.Load()
+	return m.key, m.cert
 }
 
 func (s *SVID) ID() (spiffeid.ID, error) {
-	cert := s.cert.get()
+	_, cert := s.Materials()
 	if len(cert.URIs) != 1 {
 		return spiffeid.ID{}, errors.New("identity: SVID certificate must carry exactly one URI SAN")
 	}
@@ -71,13 +73,13 @@ func (s *SVID) ID() (spiffeid.ID, error) {
 }
 
 func (s *SVID) tlsCertificate() (tls.Certificate, error) {
-	cert := s.cert.get()
+	key, cert := s.Materials()
 	if cert == nil {
 		return tls.Certificate{}, errors.New("identity: SVID has no certificate yet")
 	}
 	return tls.Certificate{
 		Certificate: [][]byte{cert.Raw},
-		PrivateKey:  s.key,
+		PrivateKey:  key,
 		Leaf:        cert,
 	}, nil
 }

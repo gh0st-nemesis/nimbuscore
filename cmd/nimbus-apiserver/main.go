@@ -114,6 +114,17 @@ func main() {
 	expectMember := spiffeid.MatchMemberOf(selfID.TrustDomain())
 	log.Printf("apiserver: identity %s", selfID)
 
+	if ca != nil {
+		identity.StartSelfIssueRotateLoop(ctx, svid, ca, fmt.Sprintf("/control-plane/%s", *nodeID), identity.DefaultSVIDTTL)
+	} else {
+		identity.StartReenrollRotateLoop(ctx, svid, identity.EnrollConfig{
+			ControlPlaneAddr: *joinAddr,
+			JoinToken:        *joinToken,
+			Name:             *nodeID,
+			Role:             v1.SVIDRole_SVID_ROLE_CONTROL_PLANE,
+		}, identity.DefaultSVIDTTL)
+	}
+
 	if !*bootstrap {
 		if err := joinRaftCluster(ctx, svid, expectMember, *joinAddr, *nodeID, *raftAddr); err != nil {
 			log.Fatalf("apiserver: join raft cluster: %v", err)
