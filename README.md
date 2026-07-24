@@ -10,7 +10,7 @@
   <img alt="Go" src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white">
   <img alt="Status" src="https://img.shields.io/badge/status-stable-brightgreen">
   <img alt="Platform" src="https://img.shields.io/badge/platform-linux%2Famd64-lightgrey">
-  <img alt="Docker" src="https://img.shields.io/badge/requires-Docker-2496ED?logo=docker&logoColor=white">
+  <img alt="containerd" src="https://img.shields.io/badge/requires-containerd-575757?logo=containerd&logoColor=white">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"></a>
 </p>
 
@@ -27,10 +27,15 @@ sudo dpkg -i nimbuscore_0.1.0_amd64.deb
 
 L'installation **demande le rôle de la machine** (`master` ou `worker`) et n'active que le service
 correspondant — ça évite d'activer un agent sur le control plane ou l'inverse par erreur. Choisir
-`worker` installe aussi Docker automatiquement si absent (`apt install docker.io`). Sans terminal
-interactif (script, CI, install à distance non-interactive), aucun rôle n'est présumé : aucun service
-n'est activé tant que tu n'as pas relancé `sudo dpkg-reconfigure nimbuscore` ou activé le bon
-toi-même.
+`worker` installe aussi containerd automatiquement si absent (`apt install containerd`). Sans
+terminal interactif (script, CI, install à distance non-interactive), aucun rôle n'est présumé :
+aucun service n'est activé tant que tu n'as pas relancé `sudo dpkg-reconfigure nimbuscore` ou activé
+le bon toi-même.
+
+> `nimbus-agent` tourne en root sur les nœuds `worker` (comme un vrai kubelet) : démarrer un
+> conteneur via le client `ctr` de containerd implique des opérations de montage overlay qui
+> demandent `CAP_SYS_ADMIN`+`CAP_DAC_OVERRIDE` — en pratique proche de root de toute façon.
+> `nimbus-apiserver`, lui, tourne sous un utilisateur système dédié non-root (`nimbuscore`).
 
 ## Démarrer un cluster
 

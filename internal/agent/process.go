@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/tetratelabs/wazero"
@@ -25,7 +26,7 @@ type trackedProcess struct {
 	pod         *v1.Pod
 	cmd         *exec.Cmd
 	wasmRuntime *wasmrt.Runtime
-	dockerName  string
+	containerID string
 	restarts    int32
 }
 
@@ -82,16 +83,12 @@ func (r *processRuntime) memoryUsageBytes(key string) int64 {
 
 	var pid int32
 	switch {
-	case tp.dockerName != "":
-		out, err := exec.Command("docker", "inspect", "-f", "{{.State.Pid}}", tp.dockerName).Output()
+	case tp.containerID != "":
+		found, err := containerdTaskPID(tp.containerID)
 		if err != nil {
 			return 0
 		}
-		n, err := strconv.Atoi(strings.TrimSpace(string(out)))
-		if err != nil || n <= 0 {
-			return 0
-		}
-		pid = int32(n)
+		pid = found
 	case tp.cmd != nil && tp.cmd.Process != nil:
 		pid = int32(tp.cmd.Process.Pid)
 	default:
@@ -109,6 +106,24 @@ func (r *processRuntime) memoryUsageBytes(key string) int64 {
 	return int64(info.RSS)
 }
 
+func containerdTaskPID(containerID string) (int32, error) {
+	out, err := exec.Command("ctr", "task", "ls").Output()
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == containerID {
+			pid, err := strconv.Atoi(fields[1])
+			if err != nil {
+				return 0, err
+			}
+			return int32(pid), nil
+		}
+	}
+	return 0, fmt.Errorf("agent: task %s not found in ctr task ls", containerID)
+}
+
 func firstContainer(pod *v1.Pod) *v1.Container {
 	containers := pod.GetSpec().GetContainers()
 	if len(containers) == 0 {
@@ -123,41 +138,78 @@ func (r *processRuntime) start(pod *v1.Pod) error {
 	case c.GetWasmModulePath() != "":
 		return r.startWASM(pod, c.GetWasmModulePath())
 	case c.GetImage() != "":
-		return r.startDocker(pod)
+		return r.startContainerd(pod)
 	default:
 		return r.startProcess(pod)
 	}
 }
 
-func dockerContainerName(pod *v1.Pod) string {
+func containerName(pod *v1.Pod) string {
 	return fmt.Sprintf("nimbus-%s-%s", pod.GetMetadata().GetNamespace(), pod.GetMetadata().GetName())
 }
 
-func (r *processRuntime) startDocker(pod *v1.Pod) error {
+func removeContainerdContainer(id string) {
+	for i := 0; i < 30; i++ {
+		if exec.Command("ctr", "task", "kill", "-s", "SIGKILL", id).Run() == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	for i := 0; i < 30; i++ {
+		out, err := exec.Command("ctr", "task", "ls").Output()
+		if err == nil && !strings.Contains(string(out), id) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	exec.Command("ctr", "task", "rm", id).Run()      //nolint:errcheck
+	exec.Command("ctr", "container", "rm", id).Run() //nolint:errcheck
+}
+
+func resolveImageRef(ref string) string {
+	if strings.HasPrefix(ref, "docker.io/") || strings.HasPrefix(ref, "localhost/") {
+		return ref
+	}
+	slash := strings.Index(ref, "/")
+	if slash == -1 {
+		return "docker.io/library/" + ref
+	}
+	firstSegment := ref[:slash]
+	if strings.ContainsAny(firstSegment, ".:") || firstSegment == "localhost" {
+		return ref
+	}
+	return "docker.io/" + ref
+}
+
+func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 	key := podKey(pod)
 	c := firstContainer(pod)
-	name := dockerContainerName(pod)
+	id := containerName(pod)
+	image := resolveImageRef(c.GetImage())
 
-	exec.Command("docker", "rm", "-f", name).Run() //nolint:errcheck
+	removeContainerdContainer(id)
 
-	args := []string{"run", "-d", "--name", name}
-	for _, port := range c.GetContainerPorts() {
-		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", port, port))
+	if out, err := exec.Command("ctr", "images", "pull", image).CombinedOutput(); err != nil {
+		return fmt.Errorf("agent: ctr images pull %s: %w: %s", image, err, strings.TrimSpace(string(out)))
 	}
+
+	args := []string{"run", "--rm", "--net-host"}
 	if limits := c.GetResources().GetLimits(); limits != nil {
 		if millis := limits.GetCpuMillis(); millis > 0 {
 			args = append(args, "--cpus", fmt.Sprintf("%.3f", float64(millis)/1000))
 		}
 		if mem := limits.GetMemoryBytes(); mem > 0 {
-			args = append(args, "--memory", strconv.FormatInt(mem, 10))
+			args = append(args, "--memory-limit", strconv.FormatInt(mem, 10))
 		}
 	}
-	args = append(args, c.GetImage())
+	args = append(args, image, id)
 	args = append(args, c.GetCommand()...)
 
-	out, err := exec.Command("docker", args...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("agent: docker run %s: %w: %s", c.GetImage(), err, strings.TrimSpace(string(out)))
+	cmd := exec.Command("ctr", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("agent: ctr run %s: %w", image, err)
 	}
 
 	r.mu.Lock()
@@ -165,18 +217,18 @@ func (r *processRuntime) startDocker(pod *v1.Pod) error {
 	if existing, ok := r.procs[key]; ok {
 		restarts = existing.restarts
 	}
-	r.procs[key] = &trackedProcess{pod: pod, dockerName: name, restarts: restarts}
+	r.procs[key] = &trackedProcess{pod: pod, cmd: cmd, containerID: id, restarts: restarts}
 	r.mu.Unlock()
 
 	go func() {
-		waitOut, waitErr := exec.Command("docker", "wait", name).Output()
+		err := cmd.Wait()
 		exitCode := 0
-		if waitErr != nil {
-			exitCode = -1
-		} else if n, convErr := strconv.Atoi(strings.TrimSpace(string(waitOut))); convErr == nil {
-			exitCode = n
-		} else {
-			exitCode = -1
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				exitCode = exitErr.ExitCode()
+			} else {
+				exitCode = -1
+			}
 		}
 		r.exited <- exitEvent{key: key, exitCode: exitCode}
 	}()
@@ -273,14 +325,14 @@ func (r *processRuntime) stop(key string) {
 	if !ok {
 		return
 	}
+	if tp.containerID != "" {
+		removeContainerdContainer(tp.containerID)
+	}
 	if tp.cmd != nil && tp.cmd.Process != nil {
 		_ = tp.cmd.Process.Kill()
 	}
 	if tp.wasmRuntime != nil {
 		_ = tp.wasmRuntime.Close(context.Background())
-	}
-	if tp.dockerName != "" {
-		_ = exec.Command("docker", "rm", "-f", tp.dockerName).Run()
 	}
 }
 

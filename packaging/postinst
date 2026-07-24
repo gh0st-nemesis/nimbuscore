@@ -42,17 +42,14 @@ MSG
     ;;
 
   worker)
-    if ! command -v docker >/dev/null 2>&1; then
-      echo "nimbuscore: role is worker, installing Docker (apt-get install -y docker.io)..."
+    if ! command -v containerd >/dev/null 2>&1; then
+      echo "nimbuscore: role is worker, installing containerd (apt-get install -y containerd)..."
       if command -v apt-get >/dev/null 2>&1; then
-        DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io || \
-          echo "nimbuscore: automatic Docker install failed — install it yourself (apt install docker.io) before starting nimbus-agent"
+        DEBIAN_FRONTEND=noninteractive apt-get install -y containerd || \
+          echo "nimbuscore: automatic containerd install failed — install it yourself (apt install containerd) before starting nimbus-agent"
       else
-        echo "nimbuscore: apt-get not found — install Docker yourself before starting nimbus-agent"
+        echo "nimbuscore: apt-get not found — install containerd yourself before starting nimbus-agent"
       fi
-    fi
-    if getent group docker >/dev/null; then
-      usermod -aG docker nimbuscore || true
     fi
 
     systemctl enable nimbus-agent >/dev/null 2>&1 || true
@@ -60,15 +57,16 @@ MSG
 nimbuscore installed — role: worker.
 
 nimbus-agent.service enabled (not started yet). nimbus-apiserver was NOT
-enabled on this machine, since it was declared a worker.
+enabled on this machine, since it was declared a worker. nimbus-agent
+runs as root (like a real kubelet does) — starting containers via
+containerd's ctr client involves overlay mount operations that need
+root/CAP_SYS_ADMIN+CAP_DAC_OVERRIDE, which isn't meaningfully different
+from root in practice.
 
 Edit /etc/nimbuscore/agent.env (node name, control-plane address, join
 token), then:
 
   systemctl start nimbus-agent
-
-If Docker was just installed, the nimbuscore user was added to the
-docker group — a fresh service start (not just enable) picks that up.
 MSG
     ;;
 
@@ -80,7 +78,7 @@ Run 'sudo dpkg-reconfigure nimbuscore' to pick master or worker, or
 enable the right service yourself:
 
   systemctl enable --now nimbus-apiserver   # control plane
-  systemctl enable --now nimbus-agent       # node running pods (needs Docker)
+  systemctl enable --now nimbus-agent       # node running pods (needs containerd)
 MSG
     ;;
 esac

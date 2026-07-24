@@ -5,8 +5,6 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=nimbuscore
-Group=nimbuscore
 EnvironmentFile=-/etc/nimbuscore/agent.env
 WorkingDirectory=/var/lib/nimbuscore/agent
 ExecStart=/usr/bin/nimbus-agent $NIMBUS_AGENT_ARGS

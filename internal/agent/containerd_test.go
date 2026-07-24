@@ -1,0 +1,149 @@
+package agent
+
+import (
+	"os/exec"
+	"strings"
+	"testing"
+	"time"
+
+	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
+)
+
+func containerdAvailable(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("ctr"); err != nil {
+		t.Skip("ctr not available on PATH")
+	}
+	if err := exec.Command("ctr", "version").Run(); err != nil {
+		t.Skip("containerd daemon not reachable")
+	}
+}
+
+func containerdPod(name, image string, command []string) *v1.Pod {
+	return &v1.Pod{
+		Metadata: &v1.ObjectMeta{Name: name, Namespace: "default"},
+		Spec: &v1.PodSpec{
+			NodeName:      "test-node",
+			RestartPolicy: v1.RestartPolicy_RESTART_POLICY_NEVER,
+			Containers:    []*v1.Container{{Name: "app", Image: image, Command: command}},
+		},
+		Status: &v1.PodStatus{Phase: v1.PodPhase_POD_PHASE_PENDING},
+	}
+}
+
+func TestResolveImageRef(t *testing.T) {
+	cases := map[string]string{
+		"nginx:alpine":                   "docker.io/library/nginx:alpine",
+		"alpine":                         "docker.io/library/alpine",
+		"myuser/myimage:tag":             "docker.io/myuser/myimage:tag",
+		"gcr.io/project/image:tag":       "gcr.io/project/image:tag",
+		"localhost:5000/myimage":         "localhost:5000/myimage",
+		"docker.io/library/nginx:alpine": "docker.io/library/nginx:alpine",
+	}
+	for in, want := range cases {
+		if got := resolveImageRef(in); got != want {
+			t.Errorf("resolveImageRef(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestContainerdRuntimeStartAndExit(t *testing.T) {
+	containerdAvailable(t)
+
+	r := newProcessRuntime()
+	pod := containerdPod("ctr-exit0", "alpine:latest", []string{"true"})
+	defer removeContainerdContainer(containerName(pod))
+
+	if err := r.start(pod); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	select {
+	case ev := <-r.exited:
+		if ev.key != podKey(pod) {
+			t.Errorf("exit event key = %q, want %q", ev.key, podKey(pod))
+		}
+		if ev.exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", ev.exitCode)
+		}
+	case <-time.After(60 * time.Second):
+		t.Fatal("timed out waiting for containerd task exit")
+	}
+}
+
+func TestContainerdRuntimeNonZeroExit(t *testing.T) {
+	containerdAvailable(t)
+
+	r := newProcessRuntime()
+	pod := containerdPod("ctr-exit1", "docker.io/library/alpine:latest", []string{"false"})
+	defer removeContainerdContainer(containerName(pod))
+
+	if err := r.start(pod); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	select {
+	case ev := <-r.exited:
+		if ev.exitCode != 1 {
+			t.Errorf("exit code = %d, want 1", ev.exitCode)
+		}
+	case <-time.After(60 * time.Second):
+		t.Fatal("timed out waiting for containerd task exit")
+	}
+}
+
+func TestContainerdRuntimeStopRemovesTask(t *testing.T) {
+	containerdAvailable(t)
+
+	r := newProcessRuntime()
+	pod := containerdPod("ctr-sleeper", "docker.io/library/alpine:latest", []string{"sleep", "60"})
+	id := containerName(pod)
+	defer removeContainerdContainer(id)
+
+	if err := r.start(pod); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	key := podKey(pod)
+	if !r.has(key) {
+		t.Fatal("runtime does not report the task as tracked")
+	}
+
+	r.stop(key)
+	if r.has(key) {
+		t.Error("task still tracked after stop")
+	}
+
+	out, err := exec.Command("ctr", "task", "ls").Output()
+	if err != nil {
+		t.Fatalf("ctr task ls: %v", err)
+	}
+	if strings.Contains(string(out), id) {
+		t.Errorf("task %q still listed after stop: %q", id, out)
+	}
+}
+
+func TestContainerdRuntimeReportsMemoryUsage(t *testing.T) {
+	containerdAvailable(t)
+
+	r := newProcessRuntime()
+	pod := containerdPod("ctr-mem", "docker.io/library/alpine:latest", []string{"sleep", "60"})
+	defer removeContainerdContainer(containerName(pod))
+
+	if err := r.start(pod); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer r.stop(podKey(pod))
+
+	deadline := time.Now().Add(15 * time.Second)
+	var usage int64
+	for time.Now().Before(deadline) {
+		usage = r.memoryUsageBytes(podKey(pod))
+		if usage > 0 {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if usage <= 0 {
+		t.Fatal("memoryUsageBytes returned 0 for a live containerd task")
+	}
+}
