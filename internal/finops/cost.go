@@ -20,9 +20,9 @@ func DefaultCostModel() CostModel {
 }
 
 type Report struct {
-	Total       float64
-	ByNamespace map[string]float64
-	ByLabel     map[string]float64
+	Total       float64            `json:"total"`
+	ByNamespace map[string]float64 `json:"byNamespace"`
+	ByLabel     map[string]float64 `json:"byLabel"`
 }
 
 func newReport() Report {

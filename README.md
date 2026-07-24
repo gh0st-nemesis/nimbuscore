@@ -42,9 +42,14 @@ le bon toi-même.
 Sur la machine qui sera le control plane (rôle `master` choisi à l'install) :
 
 ```bash
-sudo nano /etc/nimbuscore/apiserver.env   # remplacer CHANGEME par un vrai join-token
+sudo nano /etc/nimbuscore/apiserver.env   # remplacer les CHANGEME (join-token, mot de passe dashboard)
 sudo systemctl start nimbus-apiserver
 ```
+
+Un dashboard web natif est servi sur `:8080` (`http://<ip-du-control-plane>:8080/`, identifiant
+`admin` par défaut) — nodes, pods, deployments, services et coûts FinOps, rafraîchi toutes les 5s.
+Sans `-dashboard-password`, il sert sans authentification (log d'avertissement) ; à ne faire que sur
+un réseau de confiance.
 
 Sur chaque machine qui exécutera des pods (rôle `worker` choisi à l'install) :
 

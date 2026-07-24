@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/apiserver"
 	"github.com/gh0st-nemesis/nimbuscore/internal/controller"
 	"github.com/gh0st-nemesis/nimbuscore/internal/csi/hostpath"
+	"github.com/gh0st-nemesis/nimbuscore/internal/dashboard"
 	"github.com/gh0st-nemesis/nimbuscore/internal/federation"
 	"github.com/gh0st-nemesis/nimbuscore/internal/finops"
 	"github.com/gh0st-nemesis/nimbuscore/internal/gitops"
@@ -68,6 +70,9 @@ func main() {
 	gitOpsSyncInterval := fs.Duration("gitops-sync-interval", 30*time.Second, "how often the GitOps repository is re-synced")
 	costCPUCoreHour := fs.Float64("cost-cpu-core-hour", finops.DefaultCostModel().CPUCoreHour, "estimated cost in $ per CPU core-hour, used by FinOpsService")
 	costMemoryGBHour := fs.Float64("cost-memory-gb-hour", finops.DefaultCostModel().MemoryGBHour, "estimated cost in $ per memory GB-hour, used by FinOpsService")
+	dashboardAddr := fs.String("dashboard-addr", ":8080", "HTTP listen address for the built-in web dashboard")
+	dashboardUsername := fs.String("dashboard-username", "admin", "HTTP basic auth username for the dashboard")
+	dashboardPassword := fs.String("dashboard-password", "", "HTTP basic auth password for the dashboard (empty disables auth — dev only)")
 	fs.Parse(os.Args[1:])
 
 	if *joinToken == "" {
@@ -167,7 +172,8 @@ func main() {
 	v1.RegisterAdminServiceServer(srv.GRPCServer(), apiserver.NewAdminService(raftStore))
 	v1.RegisterVolumeServiceServer(srv.GRPCServer(), apiserver.NewVolumeService(raftStore, csiDriver))
 	v1.RegisterNetworkPolicyServiceServer(srv.GRPCServer(), apiserver.NewNetworkPolicyService(raftStore))
-	v1.RegisterServiceServiceServer(srv.GRPCServer(), apiserver.NewServiceService(raftStore))
+	serviceSvc := apiserver.NewServiceService(raftStore)
+	v1.RegisterServiceServiceServer(srv.GRPCServer(), serviceSvc)
 	v1.RegisterPolicyServiceServer(srv.GRPCServer(), apiserver.NewPolicyService(raftStore, policyEngine))
 	v1.RegisterSecretServiceServer(srv.GRPCServer(), apiserver.NewSecretService(raftStore))
 	v1.RegisterBackupServiceServer(srv.GRPCServer(), apiserver.NewBackupService(raftStore))
@@ -195,6 +201,28 @@ func main() {
 		}, deployments, *gitOpsSyncInterval))
 	}
 	go controller.RunWhileLeader(ctx, raftStore, mgr, 0)
+
+	dashboardHandler, err := dashboard.NewHandler(dashboard.Config{
+		Nodes:       nodes,
+		Pods:        pods,
+		Deployments: deployments,
+		Services:    serviceSvc,
+		CostModel:   finops.CostModel{CPUCoreHour: *costCPUCoreHour, MemoryGBHour: *costMemoryGBHour},
+		Username:    *dashboardUsername,
+		Password:    *dashboardPassword,
+	})
+	if err != nil {
+		log.Fatalf("apiserver: dashboard: %v", err)
+	}
+	if *dashboardPassword == "" {
+		log.Printf("apiserver: WARNING dashboard has no password set (-dashboard-password) — serving without authentication")
+	}
+	go func() {
+		if err := http.ListenAndServe(*dashboardAddr, dashboardHandler); err != nil {
+			log.Printf("apiserver: dashboard server: %v", err)
+		}
+	}()
+	log.Printf("apiserver: dashboard listening on %s", *dashboardAddr)
 
 	if err := srv.Serve(ctx); err != nil {
 		log.Fatalf("apiserver: %v", err)
