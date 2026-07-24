@@ -360,6 +360,83 @@ func TestDashboardCICDReportsManualSourceWithoutGitOps(t *testing.T) {
 	}
 }
 
+func TestDashboardMetricsAggregatesNodeAndPodUsage(t *testing.T) {
+	handler, pods, nodes := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	ctx := t.Context()
+	if err := nodes.Put(ctx, "", "worker-1", &v1.Node{
+		Metadata: &v1.ObjectMeta{Name: "worker-1"},
+		Status: &v1.NodeStatus{
+			Ready:       true,
+			Allocatable: &v1.ResourceList{CpuMillis: 2000, MemoryBytes: 4 << 30},
+		},
+	}); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	if err := pods.Put(ctx, "default", "web-0", &v1.Pod{
+		Metadata: &v1.ObjectMeta{Name: "web-0", Namespace: "default"},
+		Spec: &v1.PodSpec{
+			NodeName:   "worker-1",
+			Containers: []*v1.Container{{Name: "web", Resources: &v1.ResourceRequirements{Requests: &v1.ResourceList{CpuMillis: 500, MemoryBytes: 1 << 30}}}},
+		},
+		Status: &v1.PodStatus{MemoryUsageBytes: 100 << 20},
+	}); err != nil {
+		t.Fatalf("seed pod: %v", err)
+	}
+
+	resp, err := http.Get(srv.URL + "/api/metrics")
+	if err != nil {
+		t.Fatalf("GET /api/metrics: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var decoded struct {
+		CPUAllocatableMillis   int64 `json:"cpuAllocatableMillis"`
+		CPURequestedMillis     int64 `json:"cpuRequestedMillis"`
+		MemoryAllocatableBytes int64 `json:"memoryAllocatableBytes"`
+		MemoryRequestedBytes   int64 `json:"memoryRequestedBytes"`
+		MemoryUsedBytes        int64 `json:"memoryUsedBytes"`
+		Nodes                  []struct {
+			Name               string `json:"name"`
+			CPURequestedMillis int64  `json:"cpuRequestedMillis"`
+			MemoryUsedBytes    int64  `json:"memoryUsedBytes"`
+		} `json:"nodes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if decoded.CPUAllocatableMillis != 2000 {
+		t.Errorf("cpuAllocatableMillis = %d, want 2000", decoded.CPUAllocatableMillis)
+	}
+	if decoded.CPURequestedMillis != 500 {
+		t.Errorf("cpuRequestedMillis = %d, want 500", decoded.CPURequestedMillis)
+	}
+	if decoded.MemoryAllocatableBytes != int64(4)<<30 {
+		t.Errorf("memoryAllocatableBytes = %d, want %d", decoded.MemoryAllocatableBytes, int64(4)<<30)
+	}
+	if decoded.MemoryRequestedBytes != int64(1)<<30 {
+		t.Errorf("memoryRequestedBytes = %d, want %d", decoded.MemoryRequestedBytes, int64(1)<<30)
+	}
+	if decoded.MemoryUsedBytes != int64(100)<<20 {
+		t.Errorf("memoryUsedBytes = %d, want %d", decoded.MemoryUsedBytes, int64(100)<<20)
+	}
+	if len(decoded.Nodes) != 1 || decoded.Nodes[0].Name != "worker-1" {
+		t.Fatalf("nodes = %+v, want one node named worker-1", decoded.Nodes)
+	}
+	if decoded.Nodes[0].CPURequestedMillis != 500 {
+		t.Errorf("node cpuRequestedMillis = %d, want 500", decoded.Nodes[0].CPURequestedMillis)
+	}
+	if decoded.Nodes[0].MemoryUsedBytes != 100<<20 {
+		t.Errorf("node memoryUsedBytes = %d, want %d", decoded.Nodes[0].MemoryUsedBytes, 100<<20)
+	}
+}
+
 func TestDashboardRequiresBasicAuthWhenPasswordSet(t *testing.T) {
 	s := store.NewMemStore()
 	nodes := registry.New(s, "nodes", func() *v1.Node { return &v1.Node{} })

@@ -45,6 +45,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("/api/services", cfg.handleServices)
 	mux.HandleFunc("/api/finops", cfg.handleFinops)
 	mux.HandleFunc("/api/cicd", cfg.handleCICD)
+	mux.HandleFunc("/api/metrics", cfg.handleMetrics)
 
 	if cfg.Password == "" {
 		return mux, nil
@@ -284,6 +285,81 @@ func (cfg Config) handleServices(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+type nodeMetrics struct {
+	Name                   string `json:"name"`
+	Ready                  bool   `json:"ready"`
+	CPUAllocatableMillis   int64  `json:"cpuAllocatableMillis"`
+	CPURequestedMillis     int64  `json:"cpuRequestedMillis"`
+	MemoryAllocatableBytes int64  `json:"memoryAllocatableBytes"`
+	MemoryRequestedBytes   int64  `json:"memoryRequestedBytes"`
+	MemoryUsedBytes        int64  `json:"memoryUsedBytes"`
+}
+
+type clusterMetrics struct {
+	Nodes                  []nodeMetrics `json:"nodes"`
+	CPUAllocatableMillis   int64         `json:"cpuAllocatableMillis"`
+	CPURequestedMillis     int64         `json:"cpuRequestedMillis"`
+	MemoryAllocatableBytes int64         `json:"memoryAllocatableBytes"`
+	MemoryRequestedBytes   int64         `json:"memoryRequestedBytes"`
+	MemoryUsedBytes        int64         `json:"memoryUsedBytes"`
+}
+
+func (cfg Config) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	nodes, err := cfg.Nodes.List(r.Context(), "")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	pods, err := cfg.Pods.List(r.Context(), "")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	type usage struct {
+		cpuRequested, memRequested, memUsed int64
+	}
+	byNode := make(map[string]usage, len(nodes))
+	for _, p := range pods {
+		name := p.GetSpec().GetNodeName()
+		if name == "" {
+			continue
+		}
+		u := byNode[name]
+		for _, c := range p.GetSpec().GetContainers() {
+			u.cpuRequested += c.GetResources().GetRequests().GetCpuMillis()
+			u.memRequested += c.GetResources().GetRequests().GetMemoryBytes()
+		}
+		u.memUsed += p.GetStatus().GetMemoryUsageBytes()
+		byNode[name] = u
+	}
+
+	out := clusterMetrics{Nodes: make([]nodeMetrics, 0, len(nodes))}
+	for _, n := range nodes {
+		name := n.GetMetadata().GetName()
+		u := byNode[name]
+		alloc := n.GetStatus().GetAllocatable()
+		nm := nodeMetrics{
+			Name:                   name,
+			Ready:                  n.GetStatus().GetReady(),
+			CPUAllocatableMillis:   alloc.GetCpuMillis(),
+			CPURequestedMillis:     u.cpuRequested,
+			MemoryAllocatableBytes: alloc.GetMemoryBytes(),
+			MemoryRequestedBytes:   u.memRequested,
+			MemoryUsedBytes:        u.memUsed,
+		}
+		out.Nodes = append(out.Nodes, nm)
+		out.CPUAllocatableMillis += nm.CPUAllocatableMillis
+		out.CPURequestedMillis += nm.CPURequestedMillis
+		out.MemoryAllocatableBytes += nm.MemoryAllocatableBytes
+		out.MemoryRequestedBytes += nm.MemoryRequestedBytes
+		out.MemoryUsedBytes += nm.MemoryUsedBytes
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out) //nolint:errcheck
 }
 
 func (cfg Config) handleFinops(w http.ResponseWriter, r *http.Request) {

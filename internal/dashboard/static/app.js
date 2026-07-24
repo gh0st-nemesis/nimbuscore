@@ -87,6 +87,78 @@ async function refreshNodes() {
   });
 }
 
+const metricHistory = {};
+const METRIC_HISTORY_MAX = 40;
+
+function pushHistory(key, value) {
+  const arr = metricHistory[key] || (metricHistory[key] = []);
+  arr.push(value);
+  if (arr.length > METRIC_HISTORY_MAX) arr.shift();
+  return arr;
+}
+
+function sparklineSVG(values) {
+  const w = 200;
+  const h = 30;
+  if (values.length < 2) return `<svg class="sparkline" viewBox="0 0 ${w} ${h}"></svg>`;
+  const stepX = w / (values.length - 1);
+  const points = values
+    .map((v, i) => `${(i * stepX).toFixed(1)},${(h - (Math.min(Math.max(v, 0), 100) / 100) * h).toFixed(1)}`)
+    .join(" ");
+  return `<svg class="sparkline" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${points}"></polyline></svg>`;
+}
+
+function metricBlock(label, used, total, fmt, historyKey) {
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  const block = el("div", "metric-block");
+  const header = el("div", "metric-header");
+  header.appendChild(el("span", null, label));
+  header.appendChild(el("span", "metric-value", `${fmt(used)} / ${fmt(total)} (${pct.toFixed(0)}%)`));
+  block.appendChild(header);
+
+  const bar = el("div", "bar");
+  const fill = el("div", "bar-fill" + (pct > 90 ? " danger" : pct > 70 ? " warn" : ""));
+  fill.style.width = pct + "%";
+  bar.appendChild(fill);
+  block.appendChild(bar);
+
+  const history = pushHistory(historyKey, pct);
+  const svgWrap = document.createElement("div");
+  svgWrap.innerHTML = sparklineSVG(history);
+  block.appendChild(svgWrap.firstChild);
+  return block;
+}
+
+async function refreshMetrics() {
+  const data = await fetchJSON("/api/metrics");
+  const container = document.getElementById("cluster-resources");
+  container.innerHTML = "";
+
+  const clusterGrid = el("div", "metrics-grid");
+  clusterGrid.appendChild(metricBlock("CPU requested (cluster)", data.cpuRequestedMillis || 0, data.cpuAllocatableMillis || 0, fmtMillis, "cluster-cpu"));
+  clusterGrid.appendChild(metricBlock("Memory requested (cluster)", data.memoryRequestedBytes || 0, data.memoryAllocatableBytes || 0, fmtBytes, "cluster-mem-req"));
+  clusterGrid.appendChild(metricBlock("Memory used, live (cluster)", data.memoryUsedBytes || 0, data.memoryAllocatableBytes || 0, fmtBytes, "cluster-mem-used"));
+  container.appendChild(clusterGrid);
+
+  const nodes = data.nodes || [];
+  if (nodes.length === 0) {
+    container.appendChild(el("p", "empty", "no nodes joined yet"));
+    return;
+  }
+
+  const perNode = el("div", "per-node-metrics");
+  for (const n of nodes) {
+    const row = el("div", "node-metric-row");
+    row.appendChild(el("div", "node-metric-name", n.name + (n.ready ? "" : " (not ready)")));
+    const bars = el("div", "node-metric-bars");
+    bars.appendChild(metricBlock("CPU requested", n.cpuRequestedMillis || 0, n.cpuAllocatableMillis || 0, fmtMillis, "node-cpu-" + n.name));
+    bars.appendChild(metricBlock("Memory used", n.memoryUsedBytes || 0, n.memoryAllocatableBytes || 0, fmtBytes, "node-mem-" + n.name));
+    row.appendChild(bars);
+    perNode.appendChild(row);
+  }
+  container.appendChild(perNode);
+}
+
 function phaseKind(phase) {
   if (phase === "POD_PHASE_RUNNING" || phase === "POD_PHASE_SUCCEEDED") return "ok";
   if (phase === "POD_PHASE_FAILED") return "bad";
@@ -338,6 +410,7 @@ async function refreshAll() {
     refreshFinops(),
     refreshDeployments(),
     refreshCICD(),
+    refreshMetrics(),
   ]);
 }
 
