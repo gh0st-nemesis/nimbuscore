@@ -167,6 +167,10 @@ func removeContainerdContainer(id string) {
 }
 
 func resolveImageRef(ref string) string {
+	return ensureTagOrDigest(expandRegistry(ref))
+}
+
+func expandRegistry(ref string) string {
 	if strings.HasPrefix(ref, "docker.io/") || strings.HasPrefix(ref, "localhost/") {
 		return ref
 	}
@@ -179,6 +183,18 @@ func resolveImageRef(ref string) string {
 		return ref
 	}
 	return "docker.io/" + ref
+}
+
+func ensureTagOrDigest(ref string) string {
+	if strings.Contains(ref, "@") {
+		return ref
+	}
+	lastSlash := strings.LastIndex(ref, "/")
+	lastColon := strings.LastIndex(ref, ":")
+	if lastColon > lastSlash {
+		return ref
+	}
+	return ref + ":latest"
 }
 
 func (r *processRuntime) startContainerd(pod *v1.Pod) error {

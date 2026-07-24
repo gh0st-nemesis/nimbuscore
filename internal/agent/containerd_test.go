@@ -33,12 +33,17 @@ func containerdPod(name, image string, command []string) *v1.Pod {
 
 func TestResolveImageRef(t *testing.T) {
 	cases := map[string]string{
-		"nginx:alpine":                   "docker.io/library/nginx:alpine",
-		"alpine":                         "docker.io/library/alpine",
-		"myuser/myimage:tag":             "docker.io/myuser/myimage:tag",
-		"gcr.io/project/image:tag":       "gcr.io/project/image:tag",
-		"localhost:5000/myimage":         "localhost:5000/myimage",
-		"docker.io/library/nginx:alpine": "docker.io/library/nginx:alpine",
+		"nginx:alpine":                        "docker.io/library/nginx:alpine",
+		"nginx":                               "docker.io/library/nginx:latest",
+		"alpine":                              "docker.io/library/alpine:latest",
+		"myuser/myimage:tag":                  "docker.io/myuser/myimage:tag",
+		"myuser/myimage":                      "docker.io/myuser/myimage:latest",
+		"gcr.io/project/image:tag":            "gcr.io/project/image:tag",
+		"gcr.io/project/image":                "gcr.io/project/image:latest",
+		"localhost:5000/myimage":              "localhost:5000/myimage:latest",
+		"localhost:5000/myimage:tag":          "localhost:5000/myimage:tag",
+		"docker.io/library/nginx:alpine":      "docker.io/library/nginx:alpine",
+		"docker.io/library/nginx@sha256:abcd": "docker.io/library/nginx@sha256:abcd",
 	}
 	for in, want := range cases {
 		if got := resolveImageRef(in); got != want {

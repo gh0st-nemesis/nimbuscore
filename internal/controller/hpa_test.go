@@ -26,7 +26,7 @@ func seedRunningPod(t *testing.T, ctx context.Context, pods *registry.Registry[*
 		Metadata: &v1.ObjectMeta{
 			Name:      podName,
 			Namespace: "default",
-			Labels:    map[string]string{ownerLabel: deploymentName},
+			Labels:    map[string]string{OwnerDeploymentLabel: deploymentName},
 		},
 		Status: &v1.PodStatus{
 			Phase:            v1.PodPhase_POD_PHASE_RUNNING,

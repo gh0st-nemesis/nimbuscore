@@ -61,7 +61,7 @@ func TestReconcileOneScalesUp(t *testing.T) {
 		t.Fatalf("want 3 pods, got %d", len(got))
 	}
 	for _, p := range got {
-		if p.GetMetadata().GetLabels()[ownerLabel] != "web" {
+		if p.GetMetadata().GetLabels()[OwnerDeploymentLabel] != "web" {
 			t.Errorf("pod %s missing owner label", p.GetMetadata().GetName())
 		}
 		if p.GetSpec().GetNodeName() != "node-1" {

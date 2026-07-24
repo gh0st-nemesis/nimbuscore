@@ -14,7 +14,7 @@ import (
 	"github.com/gh0st-nemesis/nimbuscore/internal/store"
 )
 
-const ownerLabel = "nimbuscore.io/owner-deployment"
+const OwnerDeploymentLabel = "nimbuscore.io/owner-deployment"
 
 type DeploymentReconciler struct {
 	deployments *registry.Registry[*v1.Deployment]
@@ -129,7 +129,7 @@ func (r *DeploymentReconciler) ownedPods(ctx context.Context, d *v1.Deployment) 
 
 	owned := all[:0]
 	for _, p := range all {
-		if p.GetMetadata().GetLabels()[ownerLabel] != d.GetMetadata().GetName() {
+		if p.GetMetadata().GetLabels()[OwnerDeploymentLabel] != d.GetMetadata().GetName() {
 			continue
 		}
 
@@ -260,7 +260,7 @@ func (r *DeploymentReconciler) scheduleUnassigned(ctx context.Context, pods []*v
 func (r *DeploymentReconciler) newPod(d *v1.Deployment, index int) *v1.Pod {
 	labels := make(map[string]string, len(d.GetSpec().GetSelector())+1)
 	maps.Copy(labels, d.GetSpec().GetSelector())
-	labels[ownerLabel] = d.GetMetadata().GetName()
+	labels[OwnerDeploymentLabel] = d.GetMetadata().GetName()
 
 	return &v1.Pod{
 		Metadata: &v1.ObjectMeta{

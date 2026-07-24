@@ -49,7 +49,7 @@ func (r *PodReconciler) reconcileAll(ctx context.Context) {
 
 	var unassigned []*v1.Pod
 	for _, p := range all {
-		if p.GetMetadata().GetLabels()[ownerLabel] != "" {
+		if p.GetMetadata().GetLabels()[OwnerDeploymentLabel] != "" {
 			continue
 		}
 		if p.GetSpec().GetNodeName() != "" {

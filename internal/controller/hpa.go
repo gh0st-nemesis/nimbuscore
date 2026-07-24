@@ -81,7 +81,7 @@ func (r *HorizontalAutoscaler) reconcileOne(ctx context.Context, d *v1.Deploymen
 	var totalUtilization float64
 	var running int
 	for _, p := range all {
-		if p.GetMetadata().GetLabels()[ownerLabel] != d.GetMetadata().GetName() {
+		if p.GetMetadata().GetLabels()[OwnerDeploymentLabel] != d.GetMetadata().GetName() {
 			continue
 		}
 		if p.GetStatus().GetPhase() != v1.PodPhase_POD_PHASE_RUNNING {

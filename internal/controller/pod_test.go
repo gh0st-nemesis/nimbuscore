@@ -50,7 +50,7 @@ func TestPodReconcilerIgnoresDeploymentOwnedPods(t *testing.T) {
 		Metadata: &v1.ObjectMeta{
 			Name:      "web-0",
 			Namespace: "default",
-			Labels:    map[string]string{ownerLabel: "web"},
+			Labels:    map[string]string{OwnerDeploymentLabel: "web"},
 		},
 		Spec: &v1.PodSpec{Containers: []*v1.Container{{Name: "app", Image: "nginx"}}},
 	}
