@@ -203,13 +203,27 @@ async function refreshServices() {
     const status = s.status || {};
     const namespace = s.metadata?.namespace || "";
     const name = s.metadata?.name || "";
-    const endpoints = (status.endpoints || [])
-      .map((e) => e.nodeIp + ":" + e.nodePort)
-      .join(", ") || "—";
+    const seenNodePorts = new Set();
+    const endpointsTd = document.createElement("td");
+    const endpoints = status.endpoints || [];
+    if (endpoints.length === 0) {
+      endpointsTd.textContent = "—";
+    } else {
+      for (const e of endpoints) {
+        if (seenNodePorts.has(e.nodeIp + ":" + e.nodePort)) continue;
+        seenNodePorts.add(e.nodeIp + ":" + e.nodePort);
+        const link = el("a", "endpoint-link", `${e.nodeIp}:${e.nodePort}`);
+        link.href = `http://${e.nodeIp}:${e.nodePort}`;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        endpointsTd.appendChild(link);
+        endpointsTd.appendChild(document.createTextNode(" "));
+      }
+    }
     tr.appendChild(el("td", null, namespace));
     tr.appendChild(el("td", null, name));
     tr.appendChild(el("td", null, String(spec.port || 0)));
-    tr.appendChild(el("td", null, endpoints));
+    tr.appendChild(endpointsTd);
     const actionsTd = document.createElement("td");
     const deleteBtn = el("button", "btn-ghost btn-small", "Delete");
     deleteBtn.addEventListener("click", () => deleteService(namespace, name));
@@ -278,6 +292,8 @@ async function refreshDeployments() {
 
     const actionsTd = document.createElement("td");
     actionsTd.className = "row-actions";
+    const editBtn = el("button", "btn-ghost btn-small", "Edit");
+    editBtn.addEventListener("click", () => openDeploymentModal(d));
     const toggleBtn = el("button", "btn-ghost btn-small", replicas > 0 ? "Stop" : "Start");
     toggleBtn.addEventListener("click", () => {
       const target = replicas > 0 ? 0 : lastKnownReplicas[key] || 1;
@@ -285,6 +301,7 @@ async function refreshDeployments() {
     });
     const deleteBtn = el("button", "btn-ghost btn-small", "Delete");
     deleteBtn.addEventListener("click", () => deleteDeployment(namespace, name));
+    actionsTd.appendChild(editBtn);
     actionsTd.appendChild(toggleBtn);
     actionsTd.appendChild(deleteBtn);
     tr.appendChild(actionsTd);
@@ -292,16 +309,87 @@ async function refreshDeployments() {
   });
 }
 
+function addEnvVarRow(key, value) {
+  const rows = document.getElementById("env-vars-rows");
+  const row = el("div", "env-var-row");
+  const keyInput = document.createElement("input");
+  keyInput.placeholder = "KEY";
+  keyInput.className = "env-key";
+  keyInput.value = key || "";
+  const valueInput = document.createElement("input");
+  valueInput.placeholder = "value";
+  valueInput.className = "env-value";
+  valueInput.value = value || "";
+  const removeBtn = el("button", "btn-ghost btn-small", "×");
+  removeBtn.type = "button";
+  removeBtn.addEventListener("click", () => row.remove());
+  row.appendChild(keyInput);
+  row.appendChild(valueInput);
+  row.appendChild(removeBtn);
+  rows.appendChild(row);
+}
+
+function collectEnvVars() {
+  const env = {};
+  document.querySelectorAll("#env-vars-rows .env-var-row").forEach((row) => {
+    const k = row.querySelector(".env-key").value.trim();
+    if (!k) return;
+    env[k] = row.querySelector(".env-value").value;
+  });
+  return env;
+}
+
+let editingDeployment = null;
+
+function openDeploymentModal(existing) {
+  const modal = document.getElementById("new-deployment-modal");
+  const form = document.getElementById("new-deployment-form");
+  const title = document.getElementById("deployment-modal-title");
+  const submitBtn = document.getElementById("deployment-submit-btn");
+  const errorEl = document.getElementById("deployment-form-error");
+
+  errorEl.textContent = "";
+  form.reset();
+  document.getElementById("env-vars-rows").innerHTML = "";
+
+  if (existing) {
+    const namespace = existing.metadata?.namespace || "default";
+    const name = existing.metadata?.name || "";
+    editingDeployment = { namespace, name };
+    title.textContent = `Edit ${namespace}/${name}`;
+    submitBtn.textContent = "Save";
+
+    const spec = existing.spec || {};
+    const container = (spec.template?.containers || [])[0] || {};
+    form.elements["name"].value = name;
+    form.elements["name"].disabled = true;
+    form.elements["namespace"].value = namespace;
+    form.elements["namespace"].disabled = true;
+    form.elements["image"].value = container.image || "";
+    form.elements["replicas"].value = spec.replicas || 1;
+    form.elements["port"].value = (container.containerPorts || [])[0] || "";
+    form.elements["command"].value = (container.command || []).join(" ");
+    for (const [k, v] of Object.entries(container.env || {})) {
+      addEnvVarRow(k, v);
+    }
+  } else {
+    editingDeployment = null;
+    title.textContent = "New deployment";
+    submitBtn.textContent = "Create";
+    form.elements["name"].disabled = false;
+    form.elements["namespace"].disabled = false;
+  }
+
+  modal.classList.add("open");
+}
+
 function initDeploymentForm() {
   const modal = document.getElementById("new-deployment-modal");
   const form = document.getElementById("new-deployment-form");
   const errorEl = document.getElementById("deployment-form-error");
 
-  document.getElementById("new-deployment-btn").addEventListener("click", () => {
-    errorEl.textContent = "";
-    form.reset();
-    modal.classList.add("open");
-  });
+  document.getElementById("new-deployment-btn").addEventListener("click", () => openDeploymentModal(null));
+  document.getElementById("add-env-var-btn").addEventListener("click", () => addEnvVarRow());
   document.getElementById("cancel-deployment-btn").addEventListener("click", () => {
     modal.classList.remove("open");
   });
@@ -316,12 +404,13 @@ function initDeploymentForm() {
     const command = String(fd.get("command") || "").trim();
 
     const payload = {
-      name: String(fd.get("name") || "").trim(),
-      namespace: String(fd.get("namespace") || "").trim() || "default",
+      name: editingDeployment ? editingDeployment.name : String(fd.get("name") || "").trim(),
+      namespace: editingDeployment ? editingDeployment.namespace : String(fd.get("namespace") || "").trim() || "default",
       image: String(fd.get("image") || "").trim(),
       replicas: parseInt(fd.get("replicas"), 10) || 1,
       port: parseInt(fd.get("port"), 10) || 0,
       command: command ? command.split(/\s+/) : [],
+      env: collectEnvVars(),
     };
 
     try {
@@ -330,6 +419,7 @@ function initDeploymentForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      const wasEditing = !!editingDeployment;
       modal.classList.remove("open");
       await Promise.allSettled([refreshDeployments(), refreshCICD(), refreshServices()]);
 
@@ -338,6 +428,8 @@ function initDeploymentForm() {
         showToast(`${payload.name}: exposed on NodePort ${nodePort} (see Services panel for node IPs).`);
       } else if (result.serviceError) {
         showToast(`${payload.name}: created, but could not expose port ${payload.port}: ${result.serviceError}`, true);
+      } else if (wasEditing) {
+        showToast(`${payload.name}: updated.`);
       }
     } catch (err) {
       errorEl.textContent = err.message || String(err);

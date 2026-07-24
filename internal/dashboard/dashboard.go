@@ -110,14 +110,15 @@ func (cfg Config) handleDeployments(w http.ResponseWriter, r *http.Request) {
 }
 
 type createDeploymentRequest struct {
-	Name        string   `json:"name"`
-	Namespace   string   `json:"namespace"`
-	Image       string   `json:"image"`
-	Replicas    int32    `json:"replicas"`
-	Port        int32    `json:"port"`
-	Command     []string `json:"command"`
-	CPUMillis   int64    `json:"cpuMillis"`
-	MemoryBytes int64    `json:"memoryBytes"`
+	Name        string            `json:"name"`
+	Namespace   string            `json:"namespace"`
+	Image       string            `json:"image"`
+	Replicas    int32             `json:"replicas"`
+	Port        int32             `json:"port"`
+	Command     []string          `json:"command"`
+	Env         map[string]string `json:"env"`
+	CPUMillis   int64             `json:"cpuMillis"`
+	MemoryBytes int64             `json:"memoryBytes"`
 }
 
 func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +148,7 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 		Image:          req.Image,
 		Command:        req.Command,
 		ContainerPorts: ports,
+		Env:            req.Env,
 	}
 	if req.CPUMillis > 0 || req.MemoryBytes > 0 {
 		container.Resources = &v1.ResourceRequirements{

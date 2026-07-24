@@ -23,6 +23,7 @@ message Container {
   repeated string command = 5;
   string wasm_module_path = 6;
   repeated int32 container_ports = 7;
+  map<string, string> env = 8;
 }
 
 enum RestartPolicy {

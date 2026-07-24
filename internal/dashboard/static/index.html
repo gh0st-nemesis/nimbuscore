@@ -92,7 +92,7 @@
 
 <div id="new-deployment-modal" class="modal-backdrop">
   <div class="modal">
-    <h3>New deployment</h3>
+    <h3 id="deployment-modal-title">New deployment</h3>
     <form id="new-deployment-form">
       <label>Name <input name="name" required placeholder="web"></label>
       <label>Namespace <input name="namespace" placeholder="default"></label>
@@ -100,9 +100,14 @@
       <label>Replicas <input name="replicas" type="number" min="1" value="1"></label>
       <label>Container port (also exposes a NodePort service) <input name="port" type="number" min="0" placeholder="80"></label>
       <label>Command (optional, space-separated) <input name="command" placeholder="sleep 3600"></label>
+      <div class="env-vars-field">
+        <span class="env-vars-label">Environment variables</span>
+        <div id="env-vars-rows"></div>
+        <button type="button" id="add-env-var-btn" class="btn-ghost btn-small">+ Add variable</button>
+      </div>
       <div class="modal-actions">
         <button type="button" id="cancel-deployment-btn" class="btn-ghost">Cancel</button>
-        <button type="submit" class="btn-primary">Create</button>
+        <button type="submit" id="deployment-submit-btn" class="btn-primary">Create</button>
       </div>
       <p id="deployment-form-error" class="form-error"></p>
     </form>

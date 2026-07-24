@@ -216,6 +216,7 @@ type Container struct {
 	Command         []string               `protobuf:"bytes,5,rep,name=command,proto3" json:"command,omitempty"`
 	WasmModulePath  string                 `protobuf:"bytes,6,opt,name=wasm_module_path,json=wasmModulePath,proto3" json:"wasm_module_path,omitempty"`
 	ContainerPorts  []int32                `protobuf:"varint,7,rep,packed,name=container_ports,json=containerPorts,proto3" json:"container_ports,omitempty"`
+	Env             map[string]string      `protobuf:"bytes,8,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -295,6 +296,13 @@ func (x *Container) GetWasmModulePath() string {
 func (x *Container) GetContainerPorts() []int32 {
 	if x != nil {
 		return x.ContainerPorts
+	}
+	return nil
+}
+
+func (x *Container) GetEnv() map[string]string {
+	if x != nil {
+		return x.Env
 	}
 	return nil
 }
@@ -515,7 +523,7 @@ const file_pod_proto_rawDesc = "" +
 	"privileged\x18\x03 \x01(\bR\n" +
 	"privileged\x12<\n" +
 	"\x1aallow_privilege_escalation\x18\x04 \x01(\bR\x18allowPrivilegeEscalation\x12%\n" +
-	"\x0frun_as_non_root\x18\x05 \x01(\bR\frunAsNonRoot\"\xb0\x02\n" +
+	"\x0frun_as_non_root\x18\x05 \x01(\bR\frunAsNonRoot\"\x9d\x03\n" +
 	"\tContainer\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12A\n" +
@@ -523,7 +531,11 @@ const file_pod_proto_rawDesc = "" +
 	"\x10security_context\x18\x04 \x01(\v2\x1e.nimbuscore.v1.SecurityContextR\x0fsecurityContext\x12\x18\n" +
 	"\acommand\x18\x05 \x03(\tR\acommand\x12(\n" +
 	"\x10wasm_module_path\x18\x06 \x01(\tR\x0ewasmModulePath\x12'\n" +
-	"\x0fcontainer_ports\x18\a \x03(\x05R\x0econtainerPorts\"\xdb\x01\n" +
+	"\x0fcontainer_ports\x18\a \x03(\x05R\x0econtainerPorts\x123\n" +
+	"\x03env\x18\b \x03(\v2!.nimbuscore.v1.Container.EnvEntryR\x03env\x1a6\n" +
+	"\bEnvEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdb\x01\n" +
 	"\aPodSpec\x128\n" +
 	"\n" +
 	"containers\x18\x01 \x03(\v2\x18.nimbuscore.v1.ContainerR\n" +
@@ -569,7 +581,7 @@ func file_pod_proto_rawDescGZIP() []byte {
 }
 
 var file_pod_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_pod_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_pod_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_pod_proto_goTypes = []any{
 	(RestartPolicy)(0),           // 0: nimbuscore.v1.RestartPolicy
 	(PodPhase)(0),                // 1: nimbuscore.v1.PodPhase
@@ -578,27 +590,29 @@ var file_pod_proto_goTypes = []any{
 	(*PodSpec)(nil),              // 4: nimbuscore.v1.PodSpec
 	(*PodStatus)(nil),            // 5: nimbuscore.v1.PodStatus
 	(*Pod)(nil),                  // 6: nimbuscore.v1.Pod
-	(*ResourceRequirements)(nil), // 7: nimbuscore.v1.ResourceRequirements
-	(*VolumeMount)(nil),          // 8: nimbuscore.v1.VolumeMount
-	(*Condition)(nil),            // 9: nimbuscore.v1.Condition
-	(*ObjectMeta)(nil),           // 10: nimbuscore.v1.ObjectMeta
+	nil,                          // 7: nimbuscore.v1.Container.EnvEntry
+	(*ResourceRequirements)(nil), // 8: nimbuscore.v1.ResourceRequirements
+	(*VolumeMount)(nil),          // 9: nimbuscore.v1.VolumeMount
+	(*Condition)(nil),            // 10: nimbuscore.v1.Condition
+	(*ObjectMeta)(nil),           // 11: nimbuscore.v1.ObjectMeta
 }
 var file_pod_proto_depIdxs = []int32{
-	7,  // 0: nimbuscore.v1.Container.resources:type_name -> nimbuscore.v1.ResourceRequirements
+	8,  // 0: nimbuscore.v1.Container.resources:type_name -> nimbuscore.v1.ResourceRequirements
 	2,  // 1: nimbuscore.v1.Container.security_context:type_name -> nimbuscore.v1.SecurityContext
-	3,  // 2: nimbuscore.v1.PodSpec.containers:type_name -> nimbuscore.v1.Container
-	8,  // 3: nimbuscore.v1.PodSpec.volumes:type_name -> nimbuscore.v1.VolumeMount
-	0,  // 4: nimbuscore.v1.PodSpec.restart_policy:type_name -> nimbuscore.v1.RestartPolicy
-	1,  // 5: nimbuscore.v1.PodStatus.phase:type_name -> nimbuscore.v1.PodPhase
-	9,  // 6: nimbuscore.v1.PodStatus.conditions:type_name -> nimbuscore.v1.Condition
-	10, // 7: nimbuscore.v1.Pod.metadata:type_name -> nimbuscore.v1.ObjectMeta
-	4,  // 8: nimbuscore.v1.Pod.spec:type_name -> nimbuscore.v1.PodSpec
-	5,  // 9: nimbuscore.v1.Pod.status:type_name -> nimbuscore.v1.PodStatus
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	7,  // 2: nimbuscore.v1.Container.env:type_name -> nimbuscore.v1.Container.EnvEntry
+	3,  // 3: nimbuscore.v1.PodSpec.containers:type_name -> nimbuscore.v1.Container
+	9,  // 4: nimbuscore.v1.PodSpec.volumes:type_name -> nimbuscore.v1.VolumeMount
+	0,  // 5: nimbuscore.v1.PodSpec.restart_policy:type_name -> nimbuscore.v1.RestartPolicy
+	1,  // 6: nimbuscore.v1.PodStatus.phase:type_name -> nimbuscore.v1.PodPhase
+	10, // 7: nimbuscore.v1.PodStatus.conditions:type_name -> nimbuscore.v1.Condition
+	11, // 8: nimbuscore.v1.Pod.metadata:type_name -> nimbuscore.v1.ObjectMeta
+	4,  // 9: nimbuscore.v1.Pod.spec:type_name -> nimbuscore.v1.PodSpec
+	5,  // 10: nimbuscore.v1.Pod.status:type_name -> nimbuscore.v1.PodStatus
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_pod_proto_init() }
@@ -614,7 +628,7 @@ func file_pod_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pod_proto_rawDesc), len(file_pod_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

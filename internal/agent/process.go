@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -217,6 +218,14 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 		if mem := limits.GetMemoryBytes(); mem > 0 {
 			args = append(args, "--memory-limit", strconv.FormatInt(mem, 10))
 		}
+	}
+	envKeys := make([]string, 0, len(c.GetEnv()))
+	for k := range c.GetEnv() {
+		envKeys = append(envKeys, k)
+	}
+	sort.Strings(envKeys)
+	for _, k := range envKeys {
+		args = append(args, "--env", k+"="+c.GetEnv()[k])
 	}
 	args = append(args, image, id)
 	args = append(args, c.GetCommand()...)

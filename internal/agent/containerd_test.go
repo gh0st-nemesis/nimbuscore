@@ -149,6 +149,29 @@ func TestContainerdRuntimeDoesNotAdoptStoppedTask(t *testing.T) {
 	}
 }
 
+func TestContainerdRuntimePassesEnvVars(t *testing.T) {
+	containerdAvailable(t)
+
+	pod := containerdPod("ctr-env", "docker.io/library/alpine:latest", []string{"sleep", "60"})
+	pod.Spec.Containers[0].Env = map[string]string{"FOO": "bar-value"}
+	id := containerName(pod)
+	defer removeContainerdContainer(id)
+
+	r := newProcessRuntime()
+	if err := r.start(pod); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer r.stop(podKey(pod))
+
+	out, err := exec.Command("ctr", "task", "exec", "--exec-id", "envcheck", id, "sh", "-c", "echo $FOO").CombinedOutput()
+	if err != nil {
+		t.Fatalf("ctr task exec: %v: %s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != "bar-value" {
+		t.Errorf("env var FOO in container = %q, want %q", got, "bar-value")
+	}
+}
+
 func TestContainerdRuntimeStopRemovesTask(t *testing.T) {
 	containerdAvailable(t)
 

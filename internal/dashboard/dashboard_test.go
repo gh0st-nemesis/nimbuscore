@@ -231,6 +231,97 @@ func TestDashboardCreateDeploymentWithPortAutoCreatesService(t *testing.T) {
 	}
 }
 
+func TestDashboardCreateDeploymentWithEnvVars(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"web","image":"nginx:alpine","env":{"FOO":"bar","API_KEY":"secret"}}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	listResp, err := http.Get(srv.URL + "/api/deployments")
+	if err != nil {
+		t.Fatalf("GET /api/deployments: %v", err)
+	}
+	defer listResp.Body.Close()
+	var decoded struct {
+		Items []struct {
+			Spec struct {
+				Template struct {
+					Containers []struct {
+						Env map[string]string `json:"env"`
+					} `json:"containers"`
+				} `json:"template"`
+			} `json:"spec"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(decoded.Items) != 1 {
+		t.Fatalf("got %d deployments, want 1", len(decoded.Items))
+	}
+	env := decoded.Items[0].Spec.Template.Containers[0].Env
+	if env["FOO"] != "bar" || env["API_KEY"] != "secret" {
+		t.Errorf("env = %+v, want FOO=bar, API_KEY=secret", env)
+	}
+}
+
+func TestDashboardEditDeploymentUpdatesEnvVars(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	create := strings.NewReader(`{"name":"web","image":"nginx:alpine","env":{"FOO":"old"}}`)
+	if _, err := http.Post(srv.URL+"/api/deployments", "application/json", create); err != nil {
+		t.Fatalf("POST create: %v", err)
+	}
+
+	update := strings.NewReader(`{"name":"web","namespace":"default","image":"nginx:alpine","env":{"FOO":"new","BAR":"added"}}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", update)
+	if err != nil {
+		t.Fatalf("POST update: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	listResp, err := http.Get(srv.URL + "/api/deployments")
+	if err != nil {
+		t.Fatalf("GET /api/deployments: %v", err)
+	}
+	defer listResp.Body.Close()
+	var decoded struct {
+		Items []struct {
+			Spec struct {
+				Template struct {
+					Containers []struct {
+						Env map[string]string `json:"env"`
+					} `json:"containers"`
+				} `json:"template"`
+			} `json:"spec"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(decoded.Items) != 1 {
+		t.Fatalf("got %d deployments after update, want 1 (upsert, not a duplicate)", len(decoded.Items))
+	}
+	env := decoded.Items[0].Spec.Template.Containers[0].Env
+	if env["FOO"] != "new" || env["BAR"] != "added" {
+		t.Errorf("env after update = %+v, want FOO=new, BAR=added", env)
+	}
+}
+
 func TestDashboardDeleteDeploymentRemovesIt(t *testing.T) {
 	handler, _, _ := newTestHandler(t)
 	srv := httptest.NewServer(handler)

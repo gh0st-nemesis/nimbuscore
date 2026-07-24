@@ -495,3 +495,43 @@ footer {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1.25rem;
 }
+
+.endpoint-link {
+  color: var(--blue-2);
+  text-decoration: none;
+}
+
+.endpoint-link:hover {
+  text-decoration: underline;
+}
+
+.env-vars-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.env-vars-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.env-var-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.4rem;
+}
+
+.env-var-row input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.env-var-row input:focus {
+  outline: none;
+  border-color: var(--blue);
+}
