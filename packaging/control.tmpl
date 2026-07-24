@@ -4,6 +4,7 @@ Section: admin
 Priority: optional
 Architecture: @ARCH@
 Installed-Size: @INSTALLED_SIZE@
+Pre-Depends: debconf (>= 0.5) | debconf-2.0
 Maintainer: gr1m <bl4ck4mi@gmail.com>
 Description: NimbusCore container orchestrator (apiserver, agent, CLI)
  From-scratch, Kubernetes-inspired container orchestrator: Raft consensus,

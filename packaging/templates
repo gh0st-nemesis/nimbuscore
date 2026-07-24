@@ -1,0 +1,11 @@
+Template: nimbuscore/role
+Type: select
+Choices: unset, master, worker
+Default: unset
+Description: Role of this machine in the NimbusCore cluster:
+ Choose "master" to run nimbus-apiserver (control plane) or "worker" to
+ run nimbus-agent (executes pods, requires Docker). Only the service
+ matching this role will be enabled, to avoid accidentally running an
+ agent on a control-plane node or vice versa. Leave "unset" (the default
+ for unattended/non-interactive installs) to enable neither service and
+ decide later with 'dpkg-reconfigure nimbuscore'.

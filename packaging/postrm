@@ -9,6 +9,11 @@ if [ "$1" = "purge" ]; then
   deluser nimbuscore >/dev/null 2>&1 || true
   delgroup nimbuscore >/dev/null 2>&1 || true
   rm -rf /var/lib/nimbuscore
+
+  if [ -f /usr/share/debconf/confmodule ]; then
+    . /usr/share/debconf/confmodule
+    db_purge || true
+  fi
 fi
 
 if [ -d /run/systemd/system ]; then

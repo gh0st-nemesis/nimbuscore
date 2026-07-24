@@ -21,31 +21,31 @@
 Un `.deb` autonome (aucun besoin de Go ni de git sur la machine cible) :
 
 ```bash
-curl -LO https://github.com/gh0st-nemesis/nimbuscore/releases/latest/download/nimbuscore_0.1.2_amd64.deb
-sudo dpkg -i nimbuscore_0.1.2_amd64.deb
+curl -LO https://github.com/gh0st-nemesis/nimbuscore/releases/latest/download/nimbuscore_0.1.0_amd64.deb
+sudo dpkg -i nimbuscore_0.1.0_amd64.deb
 ```
 
-Ça installe `nimbus-apiserver`, `nimbus-agent` et `nimbusctl`, plus les services systemd correspondants.
-Docker doit être installé séparément sur les nœuds qui font tourner des pods :
-
-```bash
-sudo apt install -y docker.io
-```
+L'installation **demande le rôle de la machine** (`master` ou `worker`) et n'active que le service
+correspondant — ça évite d'activer un agent sur le control plane ou l'inverse par erreur. Choisir
+`worker` installe aussi Docker automatiquement si absent (`apt install docker.io`). Sans terminal
+interactif (script, CI, install à distance non-interactive), aucun rôle n'est présumé : aucun service
+n'est activé tant que tu n'as pas relancé `sudo dpkg-reconfigure nimbuscore` ou activé le bon
+toi-même.
 
 ## Démarrer un cluster
 
-Sur la machine qui sera le control plane :
+Sur la machine qui sera le control plane (rôle `master` choisi à l'install) :
 
 ```bash
 sudo nano /etc/nimbuscore/apiserver.env   # remplacer CHANGEME par un vrai join-token
-sudo systemctl enable --now nimbus-apiserver
+sudo systemctl start nimbus-apiserver
 ```
 
-Sur chaque machine qui exécutera des pods :
+Sur chaque machine qui exécutera des pods (rôle `worker` choisi à l'install) :
 
 ```bash
 sudo nano /etc/nimbuscore/agent.env       # node-name, control-plane-addr, même join-token
-sudo systemctl enable --now nimbus-agent
+sudo systemctl start nimbus-agent
 ```
 
 Configurer le client :

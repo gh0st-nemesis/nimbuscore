@@ -40,15 +40,17 @@ sed -e "s/@VERSION@/$VERSION/" -e "s/@ARCH@/$ARCH/" -e "s/@INSTALLED_SIZE@/$inst
   "$SCRIPT_DIR/control.tmpl" > "$control_dir/control"
 cp "$SCRIPT_DIR/postinst" "$control_dir/postinst"
 cp "$SCRIPT_DIR/postrm" "$control_dir/postrm"
+cp "$SCRIPT_DIR/config" "$control_dir/config"
 cp "$SCRIPT_DIR/conffiles" "$control_dir/conffiles"
+cp "$SCRIPT_DIR/templates" "$control_dir/templates"
 
 echo "2.0" > "$work_dir/debian-binary"
 
 control_tar="$work_dir/control.tar"
 tar --owner=0 --group=0 --numeric-owner --mode=0755 --no-recursion -cf "$control_tar" -C "$control_dir" \
-  ./postinst ./postrm
+  ./postinst ./postrm ./config
 tar --owner=0 --group=0 --numeric-owner --mode=0644 --no-recursion -rf "$control_tar" -C "$control_dir" \
-  ./control ./conffiles
+  ./control ./conffiles ./templates
 gzip -n -f "$control_tar"
 
 data_tar="$work_dir/data.tar"

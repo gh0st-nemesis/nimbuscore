@@ -1,16 +1,14 @@
 #!/bin/sh
 set -e
 
+. /usr/share/debconf/confmodule
+
 if ! getent group nimbuscore >/dev/null; then
   addgroup --system nimbuscore
 fi
 
 if ! getent passwd nimbuscore >/dev/null; then
   adduser --system --no-create-home --ingroup nimbuscore --shell /usr/sbin/nologin nimbuscore
-fi
-
-if getent group docker >/dev/null; then
-  usermod -aG docker nimbuscore || true
 fi
 
 mkdir -p /var/lib/nimbuscore/apiserver /var/lib/nimbuscore/agent
@@ -21,24 +19,70 @@ if [ -d /run/systemd/system ]; then
   systemctl daemon-reload || true
 fi
 
-cat <<'MSG'
-nimbuscore installed.
+db_get nimbuscore/role || true
+ROLE="$RET"
 
-Edit /etc/nimbuscore/apiserver.env and /etc/nimbuscore/agent.env (join
-token, node name, control-plane address), then:
+case "$ROLE" in
+  master)
+    systemctl enable nimbus-apiserver >/dev/null 2>&1 || true
+    cat <<MSG
+nimbuscore installed — role: master.
 
-  systemctl enable --now nimbus-apiserver
-  systemctl enable --now nimbus-agent
+nimbus-apiserver.service enabled (not started yet). nimbus-agent was NOT
+enabled on this machine, since it was declared a master.
+
+Edit /etc/nimbuscore/apiserver.env (join token), then:
+
+  systemctl start nimbus-apiserver
 
 The default apiserver.env bootstraps a brand-new single-replica cluster
 with image signature verification disabled — fine for local testing,
 not for production. See README.md for a hardened configuration.
-
-nimbus-agent runs Pods that set an image as real Docker containers.
-Install Docker separately (apt install docker.io) and restart
-nimbus-agent afterwards if it was already running — the nimbuscore
-user was just added to the docker group and needs a fresh login/service
-restart to pick that up.
 MSG
+    ;;
+
+  worker)
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "nimbuscore: role is worker, installing Docker (apt-get install -y docker.io)..."
+      if command -v apt-get >/dev/null 2>&1; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io || \
+          echo "nimbuscore: automatic Docker install failed — install it yourself (apt install docker.io) before starting nimbus-agent"
+      else
+        echo "nimbuscore: apt-get not found — install Docker yourself before starting nimbus-agent"
+      fi
+    fi
+    if getent group docker >/dev/null; then
+      usermod -aG docker nimbuscore || true
+    fi
+
+    systemctl enable nimbus-agent >/dev/null 2>&1 || true
+    cat <<MSG
+nimbuscore installed — role: worker.
+
+nimbus-agent.service enabled (not started yet). nimbus-apiserver was NOT
+enabled on this machine, since it was declared a worker.
+
+Edit /etc/nimbuscore/agent.env (node name, control-plane address, join
+token), then:
+
+  systemctl start nimbus-agent
+
+If Docker was just installed, the nimbuscore user was added to the
+docker group — a fresh service start (not just enable) picks that up.
+MSG
+    ;;
+
+  *)
+    cat <<MSG
+nimbuscore installed — no role selected, no service was enabled.
+
+Run 'sudo dpkg-reconfigure nimbuscore' to pick master or worker, or
+enable the right service yourself:
+
+  systemctl enable --now nimbus-apiserver   # control plane
+  systemctl enable --now nimbus-agent       # node running pods (needs Docker)
+MSG
+    ;;
+esac
 
 exit 0
