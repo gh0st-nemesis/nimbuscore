@@ -8,48 +8,101 @@
 </head>
 <body>
 <header>
-  <h1>NimbusCore</h1>
+  <div class="brand">
+    <img src="logo.png" alt="NimbusCore">
+    <div class="brand-text">
+      <span class="brand-name">Nimbus<em>Core</em></span>
+      <span class="brand-sub">cluster dashboard</span>
+    </div>
+  </div>
+  <nav id="tabs">
+    <button class="tab active" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="deployments">Deployments</button>
+    <button class="tab" data-tab="cicd">CI/CD</button>
+  </nav>
   <span id="clock"></span>
 </header>
 
 <main>
-  <section>
-    <h2>Nodes <span class="count" id="nodes-count">0</span></h2>
-    <table id="nodes-table">
-      <thead><tr><th>Name</th><th>Ready</th><th>Internal IP</th><th>CPU</th><th>Memory</th></tr></thead>
-      <tbody></tbody>
-    </table>
+  <section id="tab-overview" class="tab-panel active">
+    <div class="grid">
+      <div class="panel">
+        <h2>Nodes <span class="count" id="nodes-count">0</span></h2>
+        <table id="nodes-table">
+          <thead><tr><th>Name</th><th>Ready</th><th>Internal IP</th><th>CPU</th><th>Memory</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Pods <span class="count" id="pods-count">0</span></h2>
+        <table id="pods-table">
+          <thead><tr><th>Namespace</th><th>Name</th><th>Phase</th><th>Node</th><th>Restarts</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Services <span class="count" id="services-count">0</span></h2>
+        <table id="services-table">
+          <thead><tr><th>Namespace</th><th>Name</th><th>Port</th><th>Endpoints</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>FinOps</h2>
+        <div id="finops-summary" class="cards"></div>
+      </div>
+    </div>
   </section>
 
-  <section>
-    <h2>Pods <span class="count" id="pods-count">0</span></h2>
-    <table id="pods-table">
-      <thead><tr><th>Namespace</th><th>Name</th><th>Phase</th><th>Node</th><th>Restarts</th></tr></thead>
-      <tbody></tbody>
-    </table>
+  <section id="tab-deployments" class="tab-panel">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Deployments <span class="count" id="deployments-count">0</span></h2>
+        <button id="new-deployment-btn" class="btn-primary">+ New deployment</button>
+      </div>
+      <table id="deployments-table">
+        <thead><tr><th>Namespace</th><th>Name</th><th>Image</th><th>Replicas</th><th>Ready</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </section>
 
-  <section>
-    <h2>Deployments <span class="count" id="deployments-count">0</span></h2>
-    <table id="deployments-table">
-      <thead><tr><th>Namespace</th><th>Name</th><th>Replicas</th><th>Ready</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
-
-  <section>
-    <h2>Services <span class="count" id="services-count">0</span></h2>
-    <table id="services-table">
-      <thead><tr><th>Namespace</th><th>Name</th><th>Port</th><th>Endpoints</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
-
-  <section>
-    <h2>FinOps</h2>
-    <div id="finops-summary" class="cards"></div>
+  <section id="tab-cicd" class="tab-panel">
+    <div class="panel">
+      <h2>GitOps</h2>
+      <div id="gitops-panel"></div>
+    </div>
+    <div class="panel">
+      <h2>Deployment pipelines</h2>
+      <table id="cicd-table">
+        <thead><tr><th>Namespace</th><th>Name</th><th>Image</th><th>Source</th><th>Rollout</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </section>
 </main>
+
+<div id="new-deployment-modal" class="modal-backdrop">
+  <div class="modal">
+    <h3>New deployment</h3>
+    <form id="new-deployment-form">
+      <label>Name <input name="name" required placeholder="web"></label>
+      <label>Namespace <input name="namespace" placeholder="default"></label>
+      <label>Image <input name="image" required placeholder="nginx:alpine"></label>
+      <label>Replicas <input name="replicas" type="number" min="1" value="1"></label>
+      <label>Container port <input name="port" type="number" min="0" placeholder="80"></label>
+      <label>Command (optional, space-separated) <input name="command" placeholder="sleep 3600"></label>
+      <div class="modal-actions">
+        <button type="button" id="cancel-deployment-btn" class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Create</button>
+      </div>
+      <p id="deployment-form-error" class="form-error"></p>
+    </form>
+  </div>
+</div>
 
 <footer>auto-refresh every 5s</footer>
 <script src="app.js"></script>

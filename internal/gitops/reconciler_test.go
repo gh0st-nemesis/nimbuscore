@@ -163,6 +163,54 @@ func TestSyncPicksUpSubsequentCommits(t *testing.T) {
 	}
 }
 
+func TestSyncRecordsStatusAndLabelsAppliedDeployments(t *testing.T) {
+	repoDir := newTestGitRepo(t, map[string]string{
+		"manifests/web.json": deploymentManifest,
+	})
+	branch := os.Getenv("_gitops_test_branch")
+
+	s := store.NewMemStore()
+	deployments := registry.New(s, "deployments", func() *v1.Deployment { return &v1.Deployment{} })
+
+	r := NewReconciler(Config{
+		RepoURL: "file://" + filepath.ToSlash(repoDir),
+		Branch:  branch,
+		Path:    "manifests",
+		WorkDir: t.TempDir(),
+	}, deployments, 0)
+
+	before := r.Status()
+	if before.LastSyncUnix != 0 {
+		t.Fatalf("status before any Sync: %+v, want zero-value", before)
+	}
+
+	if err := r.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+
+	status := r.Status()
+	if status.LastError != "" {
+		t.Errorf("status.LastError = %q, want empty after a successful sync", status.LastError)
+	}
+	if status.LastSyncUnix == 0 {
+		t.Error("status.LastSyncUnix is still 0 after a successful sync")
+	}
+	if status.LastCommit == "" {
+		t.Error("status.LastCommit is empty after a successful sync")
+	}
+	if status.RepoURL != r.cfg.RepoURL || status.Branch != branch || status.Path != "manifests" {
+		t.Errorf("status = %+v, repo/branch/path do not match config", status)
+	}
+
+	got, err := deployments.Get(context.Background(), "default", "web")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.GetMetadata().GetLabels()[ManagedByLabel] != ManagedByValue {
+		t.Errorf("labels = %v, want %s=%s", got.GetMetadata().GetLabels(), ManagedByLabel, ManagedByValue)
+	}
+}
+
 func TestSyncSkipsManifestsMissingName(t *testing.T) {
 	repoDir := newTestGitRepo(t, map[string]string{
 		"manifests/broken.json": `{"spec": {"replicas": 1}}`,

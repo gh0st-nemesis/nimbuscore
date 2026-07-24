@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
+	"github.com/gh0st-nemesis/nimbuscore/internal/admission"
 	"github.com/gh0st-nemesis/nimbuscore/internal/apiserver"
 	"github.com/gh0st-nemesis/nimbuscore/internal/dashboard"
 	"github.com/gh0st-nemesis/nimbuscore/internal/finops"
@@ -19,14 +21,13 @@ func newTestHandler(t *testing.T) (http.Handler, *registry.Registry[*v1.Pod], *r
 	s := store.NewMemStore()
 	nodes := registry.New(s, "nodes", func() *v1.Node { return &v1.Node{} })
 	pods := registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} })
-	deployments := registry.New(s, "deployments", func() *v1.Deployment { return &v1.Deployment{} })
 
 	handler, err := dashboard.NewHandler(dashboard.Config{
-		Nodes:       nodes,
-		Pods:        pods,
-		Deployments: deployments,
-		Services:    apiserver.NewServiceService(s),
-		CostModel:   finops.DefaultCostModel(),
+		Nodes:         nodes,
+		Pods:          pods,
+		DeploymentSvc: apiserver.NewDeploymentService(s, admission.NewChain()),
+		Services:      apiserver.NewServiceService(s),
+		CostModel:     finops.DefaultCostModel(),
 	})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
@@ -124,20 +125,124 @@ func TestDashboardAPIFinopsReflectsPodCost(t *testing.T) {
 	}
 }
 
+func TestDashboardCreateDeploymentViaAPI(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"web","namespace":"default","image":"nginx:alpine","replicas":2,"port":80}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	listResp, err := http.Get(srv.URL + "/api/deployments")
+	if err != nil {
+		t.Fatalf("GET /api/deployments: %v", err)
+	}
+	defer listResp.Body.Close()
+
+	var decoded struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+			Spec struct {
+				Replicas int32 `json:"replicas"`
+				Template struct {
+					Containers []struct {
+						Image string `json:"image"`
+					} `json:"containers"`
+				} `json:"template"`
+			} `json:"spec"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(decoded.Items) != 1 {
+		t.Fatalf("got %d deployments, want 1", len(decoded.Items))
+	}
+	if decoded.Items[0].Metadata.Name != "web" {
+		t.Errorf("name = %q, want web", decoded.Items[0].Metadata.Name)
+	}
+	if decoded.Items[0].Spec.Replicas != 2 {
+		t.Errorf("replicas = %d, want 2", decoded.Items[0].Spec.Replicas)
+	}
+	if got := decoded.Items[0].Spec.Template.Containers[0].Image; got != "nginx:alpine" {
+		t.Errorf("image = %q, want nginx:alpine", got)
+	}
+}
+
+func TestDashboardCreateDeploymentRejectsMissingImage(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"web"}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestDashboardCICDReportsManualSourceWithoutGitOps(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"web","image":"nginx:alpine"}`)
+	if _, err := http.Post(srv.URL+"/api/deployments", "application/json", body); err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+
+	resp, err := http.Get(srv.URL + "/api/cicd")
+	if err != nil {
+		t.Fatalf("GET /api/cicd: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var decoded struct {
+		GitOps struct {
+			Configured bool `json:"configured"`
+		} `json:"gitops"`
+		Deployments []struct {
+			Name   string `json:"name"`
+			Source string `json:"source"`
+		} `json:"deployments"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if decoded.GitOps.Configured {
+		t.Error("gitops.configured = true, want false (no GitOps reconciler wired in this test)")
+	}
+	if len(decoded.Deployments) != 1 || decoded.Deployments[0].Source != "manual" {
+		t.Errorf("deployments = %+v, want one entry with source=manual", decoded.Deployments)
+	}
+}
+
 func TestDashboardRequiresBasicAuthWhenPasswordSet(t *testing.T) {
 	s := store.NewMemStore()
 	nodes := registry.New(s, "nodes", func() *v1.Node { return &v1.Node{} })
 	pods := registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} })
-	deployments := registry.New(s, "deployments", func() *v1.Deployment { return &v1.Deployment{} })
 
 	handler, err := dashboard.NewHandler(dashboard.Config{
-		Nodes:       nodes,
-		Pods:        pods,
-		Deployments: deployments,
-		Services:    apiserver.NewServiceService(s),
-		CostModel:   finops.DefaultCostModel(),
-		Username:    "admin",
-		Password:    "s3cret",
+		Nodes:         nodes,
+		Pods:          pods,
+		DeploymentSvc: apiserver.NewDeploymentService(s, admission.NewChain()),
+		Services:      apiserver.NewServiceService(s),
+		CostModel:     finops.DefaultCostModel(),
+		Username:      "admin",
+		Password:      "s3cret",
 	})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)

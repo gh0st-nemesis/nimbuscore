@@ -1,26 +1,18 @@
 :root {
-  color-scheme: light dark;
-  --bg: #0f1115;
-  --panel: #171a21;
-  --border: #2a2f3a;
-  --text: #e6e8ec;
-  --muted: #9aa3b2;
-  --accent: #5aa9ff;
-  --ok: #3ecf8e;
-  --bad: #ef5a6f;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f5f6f8;
-    --panel: #ffffff;
-    --border: #e0e3e8;
-    --text: #1b1e24;
-    --muted: #5c6472;
-    --accent: #2563eb;
-    --ok: #16a34a;
-    --bad: #dc2626;
-  }
+  color-scheme: dark;
+  --bg: #05070d;
+  --panel: #0c0f1c;
+  --panel-2: #10142400;
+  --border: #1e2436;
+  --text: #e8eaf2;
+  --muted: #7d869c;
+  --blue: #3b82f6;
+  --blue-2: #60a5fa;
+  --purple: #7c3aed;
+  --purple-2: #a78bfa;
+  --ok: #34d399;
+  --bad: #f87171;
+  --gradient: linear-gradient(120deg, var(--blue) 0%, var(--purple) 100%);
 }
 
 * { box-sizing: border-box; }
@@ -28,71 +20,166 @@
 body {
   margin: 0;
   font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 15% -10%, rgba(59, 130, 246, 0.12), transparent 40%),
+    radial-gradient(circle at 85% 0%, rgba(124, 58, 237, 0.12), transparent 40%),
+    var(--bg);
   color: var(--text);
+  min-height: 100vh;
 }
 
 header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 1rem 1.5rem;
+  gap: 2rem;
+  padding: 0.9rem 1.5rem;
   border-bottom: 1px solid var(--border);
+  background: rgba(12, 15, 28, 0.7);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
-header h1 {
-  margin: 0;
-  font-size: 1.25rem;
-  letter-spacing: 0.02em;
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.brand img {
+  height: 34px;
+  width: 34px;
+  object-fit: contain;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.brand-name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.brand-name em {
+  font-style: normal;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.brand-sub {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+nav#tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.tab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.tab:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tab.active {
+  color: var(--text);
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.35);
 }
 
 #clock {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 main {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 1.5rem;
-  display: grid;
-  gap: 1.5rem;
 }
 
-section {
-  background: var(--panel);
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 1.25rem;
+}
+
+.panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent), var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  padding: 1.1rem 1.3rem;
   overflow-x: auto;
+  margin-bottom: 1.25rem;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
 h2 {
-  margin: 0 0 0.75rem 0;
-  font-size: 1rem;
+  margin: 0 0 0.85rem 0;
+  font-size: 0.95rem;
   color: var(--muted);
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .count {
-  background: var(--border);
-  color: var(--text);
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--blue-2);
   border-radius: 999px;
   padding: 0.05rem 0.55rem;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
 th, td {
   text-align: left;
-  padding: 0.4rem 0.6rem;
+  padding: 0.5rem 0.6rem;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
@@ -100,21 +187,28 @@ th, td {
 th {
   color: var(--muted);
   font-weight: 500;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
+}
+
+tbody tr:hover {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .badge {
   display: inline-block;
-  padding: 0.1rem 0.5rem;
+  padding: 0.12rem 0.6rem;
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
-.badge.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
-.badge.bad { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--bad); }
-.badge.muted { background: var(--border); color: var(--muted); }
+.badge.ok { background: rgba(52, 211, 153, 0.15); color: var(--ok); }
+.badge.bad { background: rgba(248, 113, 113, 0.15); color: var(--bad); }
+.badge.muted { background: rgba(125, 134, 156, 0.15); color: var(--muted); }
+.badge.gitops { background: rgba(124, 58, 237, 0.18); color: var(--purple-2); }
+.badge.manual { background: rgba(125, 134, 156, 0.15); color: var(--muted); }
 
 .cards {
   display: flex;
@@ -125,29 +219,156 @@ th {
 .card {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  min-width: 140px;
+  border-radius: 10px;
+  padding: 0.8rem 1.1rem;
+  min-width: 150px;
 }
 
 .card .label {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 .card .value {
-  font-size: 1.4rem;
+  font-size: 1.5rem;
   font-weight: 600;
-  margin-top: 0.15rem;
+  margin-top: 0.2rem;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.btn-primary {
+  background: var(--gradient);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.1);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 1.1rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.btn-ghost:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 3, 8, 0.7);
+  backdrop-filter: blur(2px);
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-backdrop.open {
+  display: flex;
+}
+
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.modal h3 {
+  margin: 0 0 1rem 0;
+}
+
+.modal form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.modal label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.modal input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.modal input:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.form-error {
+  color: var(--bad);
+  font-size: 0.82rem;
+  margin: 0.3rem 0 0 0;
+  min-height: 1.1em;
+}
+
+.gitops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.gitops-item .label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gitops-item .value {
+  font-size: 0.9rem;
+  word-break: break-all;
+}
+
+.gitops-item .value.error {
+  color: var(--bad);
 }
 
 footer {
   text-align: center;
   color: var(--muted);
-  font-size: 0.78rem;
-  padding: 1rem;
+  font-size: 0.75rem;
+  padding: 1.2rem;
 }
 
 .empty {

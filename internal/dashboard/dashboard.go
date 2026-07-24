@@ -13,6 +13,7 @@ import (
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 	"github.com/gh0st-nemesis/nimbuscore/internal/finops"
+	"github.com/gh0st-nemesis/nimbuscore/internal/gitops"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
 )
 
@@ -20,13 +21,14 @@ import (
 var staticFiles embed.FS
 
 type Config struct {
-	Nodes       *registry.Registry[*v1.Node]
-	Pods        *registry.Registry[*v1.Pod]
-	Deployments *registry.Registry[*v1.Deployment]
-	Services    v1.ServiceServiceServer
-	CostModel   finops.CostModel
-	Username    string
-	Password    string
+	Nodes         *registry.Registry[*v1.Node]
+	Pods          *registry.Registry[*v1.Pod]
+	DeploymentSvc v1.DeploymentServiceServer
+	Services      v1.ServiceServiceServer
+	GitOps        *gitops.Reconciler
+	CostModel     finops.CostModel
+	Username      string
+	Password      string
 }
 
 func NewHandler(cfg Config) (http.Handler, error) {
@@ -42,6 +44,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("/api/deployments", cfg.handleDeployments)
 	mux.HandleFunc("/api/services", cfg.handleServices)
 	mux.HandleFunc("/api/finops", cfg.handleFinops)
+	mux.HandleFunc("/api/cicd", cfg.handleCICD)
 
 	if cfg.Password == "" {
 		return mux, nil
@@ -82,12 +85,87 @@ func (cfg Config) handlePods(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg Config) handleDeployments(w http.ResponseWriter, r *http.Request) {
-	items, err := cfg.Deployments.List(r.Context(), "")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	switch r.Method {
+	case http.MethodGet:
+		resp, err := cfg.DeploymentSvc.ListDeployments(r.Context(), &v1.ListDeploymentsRequest{})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeProto(w, resp)
+
+	case http.MethodPost:
+		cfg.handleCreateDeployment(w, r)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+type createDeploymentRequest struct {
+	Name        string   `json:"name"`
+	Namespace   string   `json:"namespace"`
+	Image       string   `json:"image"`
+	Replicas    int32    `json:"replicas"`
+	Port        int32    `json:"port"`
+	Command     []string `json:"command"`
+	CPUMillis   int64    `json:"cpuMillis"`
+	MemoryBytes int64    `json:"memoryBytes"`
+}
+
+func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request) {
+	var req createDeploymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeProto(w, &v1.ListDeploymentsResponse{Items: items})
+	if req.Name == "" || req.Image == "" {
+		http.Error(w, "name and image are required", http.StatusBadRequest)
+		return
+	}
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
+	if req.Replicas <= 0 {
+		req.Replicas = 1
+	}
+
+	var ports []int32
+	if req.Port > 0 {
+		ports = []int32{req.Port}
+	}
+
+	container := &v1.Container{
+		Name:           req.Name,
+		Image:          req.Image,
+		Command:        req.Command,
+		ContainerPorts: ports,
+	}
+	if req.CPUMillis > 0 || req.MemoryBytes > 0 {
+		container.Resources = &v1.ResourceRequirements{
+			Requests: &v1.ResourceList{CpuMillis: req.CPUMillis, MemoryBytes: req.MemoryBytes},
+		}
+	}
+
+	deployment := &v1.Deployment{
+		Metadata: &v1.ObjectMeta{
+			Name:      req.Name,
+			Namespace: req.Namespace,
+			Labels:    map[string]string{"app": req.Name},
+		},
+		Spec: &v1.DeploymentSpec{
+			Replicas: req.Replicas,
+			Selector: map[string]string{"app": req.Name},
+			Template: &v1.PodSpec{Containers: []*v1.Container{container}},
+		},
+	}
+
+	created, err := cfg.DeploymentSvc.CreateDeployment(r.Context(), &v1.CreateDeploymentRequest{Deployment: deployment})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeProto(w, created)
 }
 
 func (cfg Config) handleServices(w http.ResponseWriter, r *http.Request) {
@@ -108,6 +186,74 @@ func (cfg Config) handleFinops(w http.ResponseWriter, r *http.Request) {
 	report := finops.Estimate(pods, cfg.CostModel, "", time.Now())
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(report) //nolint:errcheck
+}
+
+type cicdDeployment struct {
+	Namespace     string `json:"namespace"`
+	Name          string `json:"name"`
+	Image         string `json:"image"`
+	Replicas      int32  `json:"replicas"`
+	ReadyReplicas int32  `json:"readyReplicas"`
+	Source        string `json:"source"`
+}
+
+type cicdGitOps struct {
+	Configured   bool   `json:"configured"`
+	RepoURL      string `json:"repoUrl"`
+	Branch       string `json:"branch"`
+	Path         string `json:"path"`
+	LastSyncUnix int64  `json:"lastSyncUnix"`
+	LastCommit   string `json:"lastCommit"`
+	LastError    string `json:"lastError"`
+}
+
+type cicdResponse struct {
+	GitOps      cicdGitOps       `json:"gitops"`
+	Deployments []cicdDeployment `json:"deployments"`
+}
+
+func (cfg Config) handleCICD(w http.ResponseWriter, r *http.Request) {
+	resp, err := cfg.DeploymentSvc.ListDeployments(r.Context(), &v1.ListDeploymentsRequest{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	out := cicdResponse{Deployments: make([]cicdDeployment, 0, len(resp.GetItems()))}
+	if cfg.GitOps != nil {
+		st := cfg.GitOps.Status()
+		out.GitOps = cicdGitOps{
+			Configured:   true,
+			RepoURL:      st.RepoURL,
+			Branch:       st.Branch,
+			Path:         st.Path,
+			LastSyncUnix: st.LastSyncUnix,
+			LastCommit:   st.LastCommit,
+			LastError:    st.LastError,
+		}
+	}
+
+	for _, d := range resp.GetItems() {
+		source := "manual"
+		if d.GetMetadata().GetLabels()[gitops.ManagedByLabel] == gitops.ManagedByValue {
+			source = "gitops"
+		}
+		image := ""
+		if containers := d.GetSpec().GetTemplate().GetContainers(); len(containers) > 0 {
+			image = containers[0].GetImage()
+		}
+		out.Deployments = append(out.Deployments, cicdDeployment{
+			Namespace:     d.GetMetadata().GetNamespace(),
+			Name:          d.GetMetadata().GetName(),
+			Image:         image,
+			Replicas:      d.GetSpec().GetReplicas(),
+			ReadyReplicas: d.GetStatus().GetReadyReplicas(),
+			Source:        source,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out) //nolint:errcheck
 }
 
 func writeProto(w http.ResponseWriter, msg proto.Message) {

@@ -168,7 +168,8 @@ func main() {
 
 	v1.RegisterPodServiceServer(srv.GRPCServer(), apiserver.NewPodService(raftStore, admissionChain))
 	v1.RegisterNodeServiceServer(srv.GRPCServer(), apiserver.NewNodeService(raftStore))
-	v1.RegisterDeploymentServiceServer(srv.GRPCServer(), apiserver.NewDeploymentService(raftStore, admissionChain))
+	deploymentSvc := apiserver.NewDeploymentService(raftStore, admissionChain)
+	v1.RegisterDeploymentServiceServer(srv.GRPCServer(), deploymentSvc)
 	v1.RegisterAdminServiceServer(srv.GRPCServer(), apiserver.NewAdminService(raftStore))
 	v1.RegisterVolumeServiceServer(srv.GRPCServer(), apiserver.NewVolumeService(raftStore, csiDriver))
 	v1.RegisterNetworkPolicyServiceServer(srv.GRPCServer(), apiserver.NewNetworkPolicyService(raftStore))
@@ -192,24 +193,27 @@ func main() {
 	mgr.Register(controller.NewNodeHealthReconciler(nodes, 0, 0))
 	mgr.Register(controller.NewHorizontalAutoscaler(deployments, pods, nodes, 0))
 	mgr.Register(controller.NewKeyRotationReconciler(raftStore, *secretKeyRotationInterval))
+	var gitOpsReconciler *gitops.Reconciler
 	if *gitOpsRepoURL != "" {
-		mgr.Register(gitops.NewReconciler(gitops.Config{
+		gitOpsReconciler = gitops.NewReconciler(gitops.Config{
 			RepoURL: *gitOpsRepoURL,
 			Branch:  *gitOpsBranch,
 			Path:    *gitOpsPath,
 			WorkDir: *gitOpsWorkDir,
-		}, deployments, *gitOpsSyncInterval))
+		}, deployments, *gitOpsSyncInterval)
+		mgr.Register(gitOpsReconciler)
 	}
 	go controller.RunWhileLeader(ctx, raftStore, mgr, 0)
 
 	dashboardHandler, err := dashboard.NewHandler(dashboard.Config{
-		Nodes:       nodes,
-		Pods:        pods,
-		Deployments: deployments,
-		Services:    serviceSvc,
-		CostModel:   finops.CostModel{CPUCoreHour: *costCPUCoreHour, MemoryGBHour: *costMemoryGBHour},
-		Username:    *dashboardUsername,
-		Password:    *dashboardPassword,
+		Nodes:         nodes,
+		Pods:          pods,
+		DeploymentSvc: deploymentSvc,
+		Services:      serviceSvc,
+		GitOps:        gitOpsReconciler,
+		CostModel:     finops.CostModel{CPUCoreHour: *costCPUCoreHour, MemoryGBHour: *costMemoryGBHour},
+		Username:      *dashboardUsername,
+		Password:      *dashboardPassword,
 	})
 	if err != nil {
 		log.Fatalf("apiserver: dashboard: %v", err)
