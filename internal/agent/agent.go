@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
@@ -76,9 +77,17 @@ func (a *Agent) reconcile(ctx context.Context) {
 		desired[podKey(pod)] = pod
 	}
 
+	a.runtime.checkContainerdExits()
+	a.reconcileOrphanContainers(desired)
+
 	for key := range desired {
 		if !a.runtime.has(key) {
-			a.startPod(ctx, desired[key])
+			pod := desired[key]
+			if a.runtime.adoptIfRunning(pod) {
+				log.Printf("agent: adopted already-running pod %s", key)
+			} else {
+				a.startPod(ctx, pod)
+			}
 		}
 	}
 
@@ -94,6 +103,26 @@ func (a *Agent) reconcile(ctx context.Context) {
 			continue
 		}
 		a.reportStatus(ctx, pod, v1.PodPhase_POD_PHASE_RUNNING, "", a.runtime.restartCount(key), a.runtime.memoryUsageBytes(key))
+	}
+}
+
+func (a *Agent) reconcileOrphanContainers(desired map[string]*v1.Pod) {
+	statuses, err := listContainerdTaskStatuses()
+	if err != nil {
+		return
+	}
+
+	wanted := make(map[string]bool, len(desired))
+	for _, pod := range desired {
+		wanted[containerName(pod)] = true
+	}
+
+	for name := range statuses {
+		if !strings.HasPrefix(name, "nimbus-") || wanted[name] {
+			continue
+		}
+		log.Printf("agent: removing orphaned container %s (no matching pod)", name)
+		removeContainerdContainer(name)
 	}
 }
 

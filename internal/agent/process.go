@@ -209,7 +209,7 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 		return fmt.Errorf("agent: ctr images pull %s: %w: %s", image, err, strings.TrimSpace(string(out)))
 	}
 
-	args := []string{"run", "--rm", "--net-host"}
+	args := []string{"run", "-d", "--net-host"}
 	if limits := c.GetResources().GetLimits(); limits != nil {
 		if millis := limits.GetCpuMillis(); millis > 0 {
 			args = append(args, "--cpus", fmt.Sprintf("%.3f", float64(millis)/1000))
@@ -221,11 +221,8 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 	args = append(args, image, id)
 	args = append(args, c.GetCommand()...)
 
-	cmd := exec.Command("ctr", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("agent: ctr run %s: %w", image, err)
+	if out, err := exec.Command("ctr", args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("agent: ctr run %s: %w: %s", image, err, strings.TrimSpace(string(out)))
 	}
 
 	r.mu.Lock()
@@ -233,22 +230,67 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 	if existing, ok := r.procs[key]; ok {
 		restarts = existing.restarts
 	}
-	r.procs[key] = &trackedProcess{pod: pod, cmd: cmd, containerID: id, restarts: restarts}
+	r.procs[key] = &trackedProcess{pod: pod, containerID: id, restarts: restarts}
+	r.mu.Unlock()
+	return nil
+}
+
+func listContainerdTaskStatuses() (map[string]string, error) {
+	out, err := exec.Command("ctr", "task", "ls").Output()
+	if err != nil {
+		return nil, err
+	}
+	statuses := make(map[string]string)
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] == "TASK" {
+			continue
+		}
+		statuses[fields[0]] = fields[2]
+	}
+	return statuses, nil
+}
+
+func (r *processRuntime) adoptIfRunning(pod *v1.Pod) bool {
+	c := firstContainer(pod)
+	if c.GetImage() == "" {
+		return false
+	}
+	id := containerName(pod)
+	statuses, err := listContainerdTaskStatuses()
+	if err != nil || statuses[id] != "RUNNING" {
+		return false
+	}
+
+	key := podKey(pod)
+	r.mu.Lock()
+	r.procs[key] = &trackedProcess{pod: pod, containerID: id}
+	r.mu.Unlock()
+	return true
+}
+
+func (r *processRuntime) checkContainerdExits() {
+	statuses, err := listContainerdTaskStatuses()
+	if err != nil {
+		return
+	}
+
+	r.mu.Lock()
+	var exits []exitEvent
+	for key, tp := range r.procs {
+		if tp.containerID == "" {
+			continue
+		}
+		if statuses[tp.containerID] == "RUNNING" {
+			continue
+		}
+		exits = append(exits, exitEvent{key: key, exitCode: -1})
+	}
 	r.mu.Unlock()
 
-	go func() {
-		err := cmd.Wait()
-		exitCode := 0
-		if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
-			} else {
-				exitCode = -1
-			}
-		}
-		r.exited <- exitEvent{key: key, exitCode: exitCode}
-	}()
-	return nil
+	for _, ev := range exits {
+		r.exited <- ev
+	}
 }
 
 func (r *processRuntime) startProcess(pod *v1.Pod) error {

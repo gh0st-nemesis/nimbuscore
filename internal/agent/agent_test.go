@@ -114,6 +114,35 @@ func TestAgentRestartsFailedPodUnderAlwaysPolicy(t *testing.T) {
 	t.Fatalf("pod was not restarted at least twice within the deadline (last status: %v)", client.statusOf(podKey(pod)))
 }
 
+func TestAgentRemovesOrphanedContainerNotInDesiredPods(t *testing.T) {
+	containerdAvailable(t)
+
+	orphanPod := containerdPod("agent-orphan", "docker.io/library/alpine:latest", []string{"sleep", "60"})
+	orphanID := containerName(orphanPod)
+	defer removeContainerdContainer(orphanID)
+
+	standalone := newProcessRuntime()
+	if err := standalone.start(orphanPod); err != nil {
+		t.Fatalf("start orphan container: %v", err)
+	}
+
+	client := newFakePodServiceClient()
+	a := New(Config{NodeName: "test-node"}, client, nil)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		a.reconcile(context.Background())
+		statuses, err := listContainerdTaskStatuses()
+		if err == nil {
+			if _, ok := statuses[orphanID]; !ok {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("orphaned container was not removed by reconcileOrphanContainers")
+}
+
 func TestAgentIgnoresPodsAssignedToOtherNodes(t *testing.T) {
 	client := newFakePodServiceClient()
 	pod := testPod("elsewhere", helperCommand(t, "exit0"), v1.RestartPolicy_RESTART_POLICY_NEVER)

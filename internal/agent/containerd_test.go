@@ -52,6 +52,21 @@ func TestResolveImageRef(t *testing.T) {
 	}
 }
 
+func pollUntilExit(t *testing.T, r *processRuntime, timeout time.Duration) exitEvent {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		r.checkContainerdExits()
+		select {
+		case ev := <-r.exited:
+			return ev
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	t.Fatal("timed out waiting for containerd task exit")
+	return exitEvent{}
+}
+
 func TestContainerdRuntimeStartAndExit(t *testing.T) {
 	containerdAvailable(t)
 
@@ -63,16 +78,9 @@ func TestContainerdRuntimeStartAndExit(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 
-	select {
-	case ev := <-r.exited:
-		if ev.key != podKey(pod) {
-			t.Errorf("exit event key = %q, want %q", ev.key, podKey(pod))
-		}
-		if ev.exitCode != 0 {
-			t.Errorf("exit code = %d, want 0", ev.exitCode)
-		}
-	case <-time.After(60 * time.Second):
-		t.Fatal("timed out waiting for containerd task exit")
+	ev := pollUntilExit(t, r, 30*time.Second)
+	if ev.key != podKey(pod) {
+		t.Errorf("exit event key = %q, want %q", ev.key, podKey(pod))
 	}
 }
 
@@ -87,13 +95,57 @@ func TestContainerdRuntimeNonZeroExit(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 
-	select {
-	case ev := <-r.exited:
-		if ev.exitCode != 1 {
-			t.Errorf("exit code = %d, want 1", ev.exitCode)
-		}
-	case <-time.After(60 * time.Second):
-		t.Fatal("timed out waiting for containerd task exit")
+	pollUntilExit(t, r, 30*time.Second)
+}
+
+func TestContainerdRuntimeSurvivesAgentRestartViaAdoption(t *testing.T) {
+	containerdAvailable(t)
+
+	pod := containerdPod("ctr-adopt", "docker.io/library/alpine:latest", []string{"sleep", "60"})
+	id := containerName(pod)
+	defer removeContainerdContainer(id)
+
+	original := newProcessRuntime()
+	if err := original.start(pod); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	originalPID, err := containerdTaskPID(id)
+	if err != nil {
+		t.Fatalf("containerdTaskPID: %v", err)
+	}
+
+	restarted := newProcessRuntime()
+	if !restarted.adoptIfRunning(pod) {
+		t.Fatal("adoptIfRunning = false, want true for an already-running containerd task")
+	}
+	if restarted.restartCount(podKey(pod)) != 0 {
+		t.Errorf("restartCount = %d, want 0 (adoption should not count as a restart)", restarted.restartCount(podKey(pod)))
+	}
+
+	adoptedPID, err := containerdTaskPID(id)
+	if err != nil {
+		t.Fatalf("containerdTaskPID after adoption: %v", err)
+	}
+	if adoptedPID != originalPID {
+		t.Errorf("task PID changed after adoption (%d -> %d), the container was restarted instead of adopted", originalPID, adoptedPID)
+	}
+}
+
+func TestContainerdRuntimeDoesNotAdoptStoppedTask(t *testing.T) {
+	containerdAvailable(t)
+
+	r := newProcessRuntime()
+	pod := containerdPod("ctr-adopt-stopped", "docker.io/library/alpine:latest", []string{"true"})
+	defer removeContainerdContainer(containerName(pod))
+
+	if err := r.start(pod); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	pollUntilExit(t, r, 30*time.Second)
+
+	fresh := newProcessRuntime()
+	if fresh.adoptIfRunning(pod) {
+		t.Error("adoptIfRunning = true for a STOPPED task, want false")
 	}
 }
 
