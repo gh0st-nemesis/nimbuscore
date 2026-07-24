@@ -5,6 +5,13 @@
 <h1 align="center">NimbusCore</h1>
 <p align="center"><b>Orchestrateur de conteneurs, en Go, façon Kubernetes</b></p>
 
+<p align="center">
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white">
+  <img alt="Status" src="https://img.shields.io/badge/status-stable-brightgreen">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-linux%2Famd64-lightgrey">
+  <img alt="License" src="https://img.shields.io/badge/license-unset-lightgrey">
+</p>
+
 ---
 
 ## Installer
