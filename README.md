@@ -6,10 +6,12 @@
 <p align="center"><b>Orchestrateur de conteneurs, en Go, façon Kubernetes</b></p>
 
 <p align="center">
+  <a href="https://github.com/gh0st-nemesis/nimbuscore/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/gh0st-nemesis/nimbuscore?label=release&color=blue"></a>
   <img alt="Go" src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white">
   <img alt="Status" src="https://img.shields.io/badge/status-stable-brightgreen">
   <img alt="Platform" src="https://img.shields.io/badge/platform-linux%2Famd64-lightgrey">
-  <img alt="License" src="https://img.shields.io/badge/license-unset-lightgrey">
+  <img alt="Docker" src="https://img.shields.io/badge/requires-Docker-2496ED?logo=docker&logoColor=white">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"></a>
 </p>
 
 ---
