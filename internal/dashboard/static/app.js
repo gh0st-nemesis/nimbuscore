@@ -358,20 +358,245 @@ async function refreshDeployments() {
 
     const actionsTd = document.createElement("td");
     actionsTd.className = "row-actions";
-    const editBtn = el("button", "btn-ghost btn-small", "Edit");
-    editBtn.addEventListener("click", () => openDeploymentModal(d));
-    const toggleBtn = el("button", "btn-ghost btn-small", replicas > 0 ? "Stop" : "Start");
-    toggleBtn.addEventListener("click", () => {
-      const target = replicas > 0 ? 0 : lastKnownReplicas[key] || 1;
-      scaleDeployment(namespace, name, target);
-    });
-    const deleteBtn = el("button", "btn-ghost btn-small", "Delete");
-    deleteBtn.addEventListener("click", () => deleteDeployment(namespace, name));
-    actionsTd.appendChild(editBtn);
-    actionsTd.appendChild(toggleBtn);
-    actionsTd.appendChild(deleteBtn);
+    const manageBtn = el("button", "btn-ghost btn-small", "Manage");
+    manageBtn.addEventListener("click", () => openDeploymentPanel(d));
+    actionsTd.appendChild(manageBtn);
     tr.appendChild(actionsTd);
+    tr.classList.add("clickable-row");
+    tr.addEventListener("click", (ev) => {
+      if (ev.target === manageBtn) return;
+      openDeploymentPanel(d);
+    });
     return tr;
+  });
+}
+
+let panelDeployment = null;
+let panelLogsTimer = null;
+let panelLogsStream = "runtime";
+
+function addPanelEnvVarRow(key, value) {
+  const rows = document.getElementById("panel-env-vars-rows");
+  const row = el("div", "env-var-row");
+  const keyInput = document.createElement("input");
+  keyInput.placeholder = "KEY";
+  keyInput.className = "env-key";
+  keyInput.value = key || "";
+  const valueInput = document.createElement("input");
+  valueInput.placeholder = "value";
+  valueInput.className = "env-value";
+  valueInput.value = value || "";
+  const removeBtn = el("button", "btn-ghost btn-small", "×");
+  removeBtn.type = "button";
+  removeBtn.addEventListener("click", () => row.remove());
+  row.appendChild(keyInput);
+  row.appendChild(valueInput);
+  row.appendChild(removeBtn);
+  rows.appendChild(row);
+}
+
+function collectPanelEnvVars() {
+  const env = {};
+  document.querySelectorAll("#panel-env-vars-rows .env-var-row").forEach((row) => {
+    const k = row.querySelector(".env-key").value.trim();
+    if (!k) return;
+    env[k] = row.querySelector(".env-value").value;
+  });
+  return env;
+}
+
+function setPanelDeploymentSource(source) {
+  document.querySelectorAll("#panel-tab-settings .tab-toggle").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.panelSource === source);
+  });
+  document.getElementById("panel-source-image-fields").classList.toggle("hidden", source !== "image");
+  document.getElementById("panel-source-git-fields").classList.toggle("hidden", source !== "git");
+}
+
+function setPanelTab(tabName) {
+  document.querySelectorAll(".side-tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.panelTab === tabName);
+  });
+  document.querySelectorAll(".panel-tab-content").forEach((el) => {
+    el.classList.toggle("active", el.id === "panel-tab-" + tabName);
+  });
+  if (tabName === "logs") refreshPanelLogs();
+}
+
+function panelOverviewCard(label, value) {
+  const card = el("div", "card");
+  card.appendChild(el("div", "label", label));
+  card.appendChild(el("div", "value", String(value)));
+  return card;
+}
+
+function openDeploymentPanel(d) {
+  const namespace = d.metadata?.namespace || "default";
+  const name = d.metadata?.name || "";
+  const spec = d.spec || {};
+  const status = d.status || {};
+  const container = (spec.template?.containers || [])[0] || {};
+  const replicas = spec.replicas || 0;
+
+  panelDeployment = { namespace, name };
+
+  document.getElementById("panel-title").textContent = name;
+  document.getElementById("panel-subtitle").textContent = namespace;
+
+  const cards = document.getElementById("panel-overview-cards");
+  cards.innerHTML = "";
+  cards.appendChild(panelOverviewCard("Replicas", replicas));
+  cards.appendChild(panelOverviewCard("Ready", status.readyReplicas || 0));
+  cards.appendChild(panelOverviewCard("Source", container.buildSource ? "Git repo" : "Image"));
+  cards.appendChild(panelOverviewCard("Image", container.image || (container.buildSource?.repoUrl ?? "—")));
+
+  const toggleBtn = document.getElementById("panel-toggle-btn");
+  toggleBtn.textContent = replicas > 0 ? "Stop" : "Start";
+  toggleBtn.onclick = async () => {
+    const target = replicas > 0 ? 0 : lastKnownReplicas[namespace + "/" + name] || 1;
+    await scaleDeployment(namespace, name, target);
+    const data = await fetchJSON("/api/deployments");
+    const updated = (data.items || []).find(
+      (item) => item.metadata?.namespace === namespace && item.metadata?.name === name
+    );
+    if (updated) openDeploymentPanel(updated);
+  };
+  document.getElementById("panel-delete-btn").onclick = async () => {
+    await deleteDeployment(namespace, name);
+    closeDeploymentPanel();
+  };
+
+  document.getElementById("panel-form-error").textContent = "";
+  document.getElementById("panel-env-vars-rows").innerHTML = "";
+  for (const [k, v] of Object.entries(container.env || {})) {
+    addPanelEnvVarRow(k, v);
+  }
+
+  const form = document.getElementById("panel-form");
+  form.elements["replicas"].value = replicas || 1;
+  form.elements["port"].value = (container.containerPorts || [])[0] || "";
+  form.elements["command"].value = (container.command || []).join(" ");
+  if (container.buildSource) {
+    setPanelDeploymentSource("git");
+    form.elements["gitRepoUrl"].value = container.buildSource.repoUrl || "";
+    form.elements["gitBranch"].value = container.buildSource.branch || "";
+    form.elements["gitDockerfilePath"].value = container.buildSource.dockerfilePath || "";
+    form.elements["gitContextPath"].value = container.buildSource.contextPath || "";
+  } else {
+    setPanelDeploymentSource("image");
+    form.elements["image"].value = container.image || "";
+  }
+
+  setPanelTab("overview");
+  document.getElementById("deployment-panel").classList.add("open");
+  document.getElementById("panel-backdrop").classList.add("open");
+}
+
+function closeDeploymentPanel() {
+  document.getElementById("deployment-panel").classList.remove("open");
+  document.getElementById("panel-backdrop").classList.remove("open");
+  clearInterval(panelLogsTimer);
+  panelLogsTimer = null;
+  panelDeployment = null;
+}
+
+async function refreshPanelLogs() {
+  if (!panelDeployment) return;
+  const content = document.getElementById("panel-logs-content");
+  const streamParam = panelLogsStream === "build" ? "&stream=build" : "";
+  const podName = panelDeployment.name + "-0";
+  try {
+    const resp = await fetch(
+      `/api/logs?namespace=${encodeURIComponent(panelDeployment.namespace)}&name=${encodeURIComponent(podName)}&tail=300${streamParam}`,
+      { cache: "no-store" }
+    );
+    const text = await resp.text();
+    content.textContent = resp.ok ? (text || "(empty)") : `Error: ${text}`;
+    content.scrollTop = content.scrollHeight;
+  } catch (err) {
+    content.textContent = "Error: " + (err.message || String(err));
+  }
+}
+
+function initDeploymentPanel() {
+  document.getElementById("close-panel-btn").addEventListener("click", closeDeploymentPanel);
+  document.getElementById("panel-backdrop").addEventListener("click", closeDeploymentPanel);
+  document.getElementById("panel-add-env-var-btn").addEventListener("click", () => addPanelEnvVarRow());
+
+  document.querySelectorAll(".side-tab").forEach((btn) => {
+    btn.addEventListener("click", () => setPanelTab(btn.dataset.panelTab));
+  });
+  document.querySelectorAll("#panel-tab-settings .tab-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => setPanelDeploymentSource(btn.dataset.panelSource));
+  });
+  document.querySelectorAll("#panel-tab-logs .tab-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      panelLogsStream = btn.dataset.panelStream;
+      document.querySelectorAll("#panel-tab-logs .tab-toggle").forEach((b) => b.classList.toggle("active", b === btn));
+      document.getElementById("panel-logs-content").textContent = "loading…";
+      refreshPanelLogs();
+    });
+  });
+
+  clearInterval(panelLogsTimer);
+  panelLogsTimer = setInterval(() => {
+    if (panelDeployment) refreshPanelLogs();
+  }, 3000);
+
+  const form = document.getElementById("panel-form");
+  const errorEl = document.getElementById("panel-form-error");
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    if (!panelDeployment) return;
+    errorEl.textContent = "";
+    const fd = new FormData(form);
+    const command = String(fd.get("command") || "").trim();
+    const usingGit = !document.getElementById("panel-source-git-fields").classList.contains("hidden");
+
+    const payload = {
+      name: panelDeployment.name,
+      namespace: panelDeployment.namespace,
+      replicas: parseInt(fd.get("replicas"), 10) || 1,
+      port: parseInt(fd.get("port"), 10) || 0,
+      command: command ? command.split(/\s+/) : [],
+      env: collectPanelEnvVars(),
+    };
+    if (usingGit) {
+      payload.gitRepoUrl = String(fd.get("gitRepoUrl") || "").trim();
+      payload.gitBranch = String(fd.get("gitBranch") || "").trim();
+      payload.gitDockerfilePath = String(fd.get("gitDockerfilePath") || "").trim();
+      payload.gitContextPath = String(fd.get("gitContextPath") || "").trim();
+      if (!payload.gitRepoUrl) {
+        errorEl.textContent = "Repository URL is required";
+        return;
+      }
+    } else {
+      payload.image = String(fd.get("image") || "").trim();
+      if (!payload.image) {
+        errorEl.textContent = "Image is required";
+        return;
+      }
+    }
+
+    const saveBtn = document.getElementById("panel-save-btn");
+    const originalLabel = saveBtn.textContent;
+    saveBtn.disabled = true;
+    saveBtn.textContent = usingGit ? "Building…" : "Saving…";
+
+    try {
+      await fetchJSON("/api/deployments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      await Promise.allSettled([refreshDeployments(), refreshCICD(), refreshServices()]);
+      showToast(`${payload.name}: updated.`);
+    } catch (err) {
+      errorEl.textContent = err.message || String(err);
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalLabel;
+    }
   });
 }
 
@@ -405,8 +630,6 @@ function collectEnvVars() {
   return env;
 }
 
-let editingDeployment = null;
-
 function setDeploymentSource(source) {
   document.querySelectorAll("#new-deployment-modal .tab-toggle").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.source === source);
@@ -415,53 +638,17 @@ function setDeploymentSource(source) {
   document.getElementById("source-git-fields").classList.toggle("hidden", source !== "git");
 }
 
-function openDeploymentModal(existing) {
+function openDeploymentModal() {
   const modal = document.getElementById("new-deployment-modal");
   const form = document.getElementById("new-deployment-form");
-  const title = document.getElementById("deployment-modal-title");
-  const submitBtn = document.getElementById("deployment-submit-btn");
   const errorEl = document.getElementById("deployment-form-error");
 
   errorEl.textContent = "";
   form.reset();
   document.getElementById("env-vars-rows").innerHTML = "";
   setDeploymentSource("image");
-
-  if (existing) {
-    const namespace = existing.metadata?.namespace || "default";
-    const name = existing.metadata?.name || "";
-    editingDeployment = { namespace, name };
-    title.textContent = `Edit ${namespace}/${name}`;
-    submitBtn.textContent = "Save";
-
-    const spec = existing.spec || {};
-    const container = (spec.template?.containers || [])[0] || {};
-    form.elements["name"].value = name;
-    form.elements["name"].disabled = true;
-    form.elements["namespace"].value = namespace;
-    form.elements["namespace"].disabled = true;
-    form.elements["replicas"].value = spec.replicas || 1;
-    form.elements["port"].value = (container.containerPorts || [])[0] || "";
-    form.elements["command"].value = (container.command || []).join(" ");
-    for (const [k, v] of Object.entries(container.env || {})) {
-      addEnvVarRow(k, v);
-    }
-    if (container.buildSource) {
-      setDeploymentSource("git");
-      form.elements["gitRepoUrl"].value = container.buildSource.repoUrl || "";
-      form.elements["gitBranch"].value = container.buildSource.branch || "";
-      form.elements["gitDockerfilePath"].value = container.buildSource.dockerfilePath || "";
-      form.elements["gitContextPath"].value = container.buildSource.contextPath || "";
-    } else {
-      form.elements["image"].value = container.image || "";
-    }
-  } else {
-    editingDeployment = null;
-    title.textContent = "New deployment";
-    submitBtn.textContent = "Create";
-    form.elements["name"].disabled = false;
-    form.elements["namespace"].disabled = false;
-  }
+  form.elements["name"].disabled = false;
+  form.elements["namespace"].disabled = false;
 
   modal.classList.add("open");
 }
@@ -471,7 +658,7 @@ function initDeploymentForm() {
   const form = document.getElementById("new-deployment-form");
   const errorEl = document.getElementById("deployment-form-error");
 
-  document.getElementById("new-deployment-btn").addEventListener("click", () => openDeploymentModal(null));
+  document.getElementById("new-deployment-btn").addEventListener("click", () => openDeploymentModal());
   document.getElementById("add-env-var-btn").addEventListener("click", () => addEnvVarRow());
   document.getElementById("cancel-deployment-btn").addEventListener("click", () => {
     modal.classList.remove("open");
@@ -491,8 +678,8 @@ function initDeploymentForm() {
     const usingGit = !document.getElementById("source-git-fields").classList.contains("hidden");
 
     const payload = {
-      name: editingDeployment ? editingDeployment.name : String(fd.get("name") || "").trim(),
-      namespace: editingDeployment ? editingDeployment.namespace : String(fd.get("namespace") || "").trim() || "default",
+      name: String(fd.get("name") || "").trim(),
+      namespace: String(fd.get("namespace") || "").trim() || "default",
       replicas: parseInt(fd.get("replicas"), 10) || 1,
       port: parseInt(fd.get("port"), 10) || 0,
       command: command ? command.split(/\s+/) : [],
@@ -518,7 +705,7 @@ function initDeploymentForm() {
     const submitBtn = document.getElementById("deployment-submit-btn");
     const originalLabel = submitBtn.textContent;
     submitBtn.disabled = true;
-    submitBtn.textContent = usingGit ? "Building…" : "Saving…";
+    submitBtn.textContent = usingGit ? "Building…" : "Creating…";
 
     try {
       const result = await fetchJSON("/api/deployments", {
@@ -526,7 +713,6 @@ function initDeploymentForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const wasEditing = !!editingDeployment;
       modal.classList.remove("open");
       await Promise.allSettled([refreshDeployments(), refreshCICD(), refreshServices()]);
 
@@ -535,8 +721,6 @@ function initDeploymentForm() {
         showToast(`${payload.name}: exposed on NodePort ${nodePort} (see Services panel for node IPs).`);
       } else if (result.serviceError) {
         showToast(`${payload.name}: created, but could not expose port ${payload.port}: ${result.serviceError}`, true);
-      } else if (wasEditing) {
-        showToast(`${payload.name}: updated.`);
       } else if (usingGit) {
         showToast(`${payload.name}: built from ${payload.gitRepoUrl} and deployed.`);
       }
@@ -621,6 +805,7 @@ async function refreshAll() {
 initTabs();
 initDeploymentForm();
 initLogsModal();
+initDeploymentPanel();
 refreshAll();
 setInterval(refreshAll, 5000);
 setInterval(updateClock, 1000);

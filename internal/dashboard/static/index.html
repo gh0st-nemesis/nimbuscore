@@ -144,6 +144,76 @@
   </div>
 </div>
 
+<div id="panel-backdrop" class="panel-backdrop"></div>
+<aside id="deployment-panel" class="side-panel">
+  <div class="side-panel-header">
+    <div>
+      <div class="side-panel-title" id="panel-title">—</div>
+      <div class="side-panel-subtitle" id="panel-subtitle">—</div>
+    </div>
+    <button type="button" id="close-panel-btn" class="btn-ghost btn-small">Close</button>
+  </div>
+
+  <nav class="side-panel-tabs">
+    <button class="side-tab active" data-panel-tab="overview">Overview</button>
+    <button class="side-tab" data-panel-tab="variables">Variables</button>
+    <button class="side-tab" data-panel-tab="logs">Logs</button>
+    <button class="side-tab" data-panel-tab="settings">Settings</button>
+  </nav>
+
+  <div class="side-panel-body">
+    <div id="panel-tab-overview" class="panel-tab-content active">
+      <div id="panel-overview-cards" class="panel-overview-cards"></div>
+      <div class="panel-actions">
+        <button type="button" id="panel-toggle-btn" class="btn-ghost">Stop</button>
+        <button type="button" id="panel-delete-btn" class="btn-ghost danger">Delete deployment</button>
+      </div>
+    </div>
+
+    <div id="panel-tab-variables" class="panel-tab-content">
+      <form id="panel-form">
+        <div class="env-vars-field">
+          <span class="env-vars-label">Environment variables</span>
+          <div id="panel-env-vars-rows"></div>
+          <button type="button" id="panel-add-env-var-btn" class="btn-ghost btn-small">+ Add variable</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="panel-tab-logs" class="panel-tab-content">
+      <div class="source-toggle logs-stream-toggle">
+        <button type="button" class="tab-toggle active" data-panel-stream="runtime">Runtime</button>
+        <button type="button" class="tab-toggle" data-panel-stream="build">Build</button>
+      </div>
+      <pre id="panel-logs-content" class="logs-content">loading…</pre>
+    </div>
+
+    <div id="panel-tab-settings" class="panel-tab-content">
+      <div class="source-toggle">
+        <button type="button" class="tab-toggle active" data-panel-source="image">Container image</button>
+        <button type="button" class="tab-toggle" data-panel-source="git">Git repository</button>
+      </div>
+      <div id="panel-source-image-fields" class="source-fields">
+        <label>Image <input form="panel-form" name="image" placeholder="nginx:alpine"></label>
+      </div>
+      <div id="panel-source-git-fields" class="source-fields hidden">
+        <label>Repository URL <input form="panel-form" name="gitRepoUrl" placeholder="https://github.com/user/repo.git"></label>
+        <label>Branch <input form="panel-form" name="gitBranch" placeholder="main"></label>
+        <label>Dockerfile path (optional) <input form="panel-form" name="gitDockerfilePath" placeholder="Dockerfile"></label>
+        <label>Build context path (optional) <input form="panel-form" name="gitContextPath" placeholder=""></label>
+      </div>
+      <label>Replicas <input form="panel-form" name="replicas" type="number" min="1" value="1"></label>
+      <label>Container port <input form="panel-form" name="port" type="number" min="0" placeholder="80"></label>
+      <label>Command (space-separated) <input form="panel-form" name="command" placeholder="sleep 3600"></label>
+    </div>
+  </div>
+
+  <div class="side-panel-footer">
+    <p id="panel-form-error" class="form-error"></p>
+    <button type="submit" form="panel-form" id="panel-save-btn" class="btn-primary">Save changes</button>
+  </div>
+</aside>
+
 <div id="toast" class="toast"></div>
 
 <footer>auto-refresh every 5s</footer>

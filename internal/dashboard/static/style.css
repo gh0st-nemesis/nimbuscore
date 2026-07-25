@@ -605,3 +605,136 @@ footer {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.panel-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 3, 8, 0.55);
+  backdrop-filter: blur(1px);
+  z-index: 150;
+}
+
+.panel-backdrop.open {
+  display: block;
+}
+
+.side-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: min(480px, 100vw);
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.5);
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+}
+
+.side-panel.open {
+  transform: translateX(0);
+}
+
+.side-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.1rem 1.3rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.side-panel-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.side-panel-subtitle {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.side-panel-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 0.6rem;
+}
+
+.side-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 0.7rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.side-tab:hover {
+  color: var(--text);
+}
+
+.side-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--blue);
+}
+
+.side-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.2rem 1.3rem;
+}
+
+.panel-tab-content {
+  display: none;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.panel-tab-content.active {
+  display: flex;
+}
+
+.panel-overview-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.btn-ghost.danger {
+  color: var(--bad);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.btn-ghost.danger:hover {
+  border-color: var(--bad);
+}
+
+.side-panel-footer {
+  border-top: 1px solid var(--border);
+  padding: 1rem 1.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.side-panel-footer .form-error {
+  flex: 1;
+  margin: 0;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
