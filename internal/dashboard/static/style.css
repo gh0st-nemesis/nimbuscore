@@ -49,6 +49,10 @@
 
 * { box-sizing: border-box; }
 
+html {
+  height: 100%;
+}
+
 body {
   margin: 0;
   font-family: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -61,12 +65,16 @@ body {
     var(--bg);
   background-attachment: fixed;
   color: var(--text);
+  height: 100%;
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 header {
   display: flex;
   flex-wrap: wrap;
+  flex-shrink: 0;
   align-items: center;
   gap: 1rem 2rem;
   padding: 0.9rem 1.5rem;
@@ -167,8 +175,14 @@ nav#tabs {
 
 main {
   max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
   padding: 1.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .tab-panel {
@@ -189,6 +203,14 @@ main {
 .tab-panel.active {
   animation: tab-panel-in 0.3s var(--ease-out) both;
   display: block;
+}
+
+#tab-deployments.tab-panel.active {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .grid {
@@ -452,6 +474,7 @@ tbody tr:hover {
 }
 
 footer {
+  flex-shrink: 0;
   text-align: center;
   color: var(--muted);
   font-size: 0.75rem;
@@ -868,6 +891,7 @@ footer {
 
 .canvas-toolbar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   padding: 0 1.5rem 1rem;
@@ -884,7 +908,8 @@ footer {
 
 .canvas-viewport {
   position: relative;
-  height: calc(100vh - 130px);
+  flex: 1;
+  min-height: 300px;
   margin: 0 1.5rem 1.5rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
