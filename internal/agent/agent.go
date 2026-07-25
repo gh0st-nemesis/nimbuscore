@@ -13,6 +13,7 @@ type Config struct {
 	NodeName   string
 	InternalIP string
 	Interval   time.Duration
+	LogDir     string
 }
 
 type Agent struct {
@@ -27,7 +28,9 @@ func New(cfg Config, pods v1.PodServiceClient, services v1.ServiceServiceClient)
 	if cfg.Interval <= 0 {
 		cfg.Interval = 2 * time.Second
 	}
-	return &Agent{cfg: cfg, pods: pods, services: services, runtime: newProcessRuntime(), nodePorts: newNodePortManager()}
+	runtime := newProcessRuntime()
+	runtime.logDir = cfg.LogDir
+	return &Agent{cfg: cfg, pods: pods, services: services, runtime: runtime, nodePorts: newNodePortManager()}
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -107,14 +110,17 @@ func (a *Agent) reconcile(ctx context.Context) {
 }
 
 func (a *Agent) reconcileOrphanContainers(desired map[string]*v1.Pod) {
-	statuses, err := listContainerdTaskStatuses()
-	if err != nil {
-		return
-	}
-
 	wanted := make(map[string]bool, len(desired))
 	for _, pod := range desired {
 		wanted[containerName(pod)] = true
+	}
+	removeOrphanContainers(wanted)
+}
+
+func removeOrphanContainers(wanted map[string]bool) {
+	statuses, err := listContainerdTaskStatuses()
+	if err != nil {
+		return
 	}
 
 	for name := range statuses {

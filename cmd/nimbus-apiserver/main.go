@@ -73,6 +73,7 @@ func main() {
 	dashboardAddr := fs.String("dashboard-addr", ":8080", "HTTP listen address for the built-in web dashboard")
 	dashboardUsername := fs.String("dashboard-username", "admin", "HTTP basic auth username for the dashboard")
 	dashboardPassword := fs.String("dashboard-password", "", "HTTP basic auth password for the dashboard (empty disables auth — dev only)")
+	agentLogPort := fs.Int("agent-log-port", 10250, "port each node's nimbus-agent serves container logs on (see nimbus-agent -log-addr)")
 	fs.Parse(os.Args[1:])
 
 	if *joinToken == "" {
@@ -214,6 +215,7 @@ func main() {
 		CostModel:     finops.CostModel{CPUCoreHour: *costCPUCoreHour, MemoryGBHour: *costMemoryGBHour},
 		Username:      *dashboardUsername,
 		Password:      *dashboardPassword,
+		AgentLogPort:  *agentLogPort,
 	})
 	if err != nil {
 		log.Fatalf("apiserver: dashboard: %v", err)

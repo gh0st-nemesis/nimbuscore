@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +36,7 @@ type processRuntime struct {
 	mu     sync.Mutex
 	procs  map[string]*trackedProcess
 	exited chan exitEvent
+	logDir string
 }
 
 func newProcessRuntime() *processRuntime {
@@ -46,6 +48,10 @@ func newProcessRuntime() *processRuntime {
 
 func podKey(pod *v1.Pod) string {
 	return pod.GetMetadata().GetNamespace() + "/" + pod.GetMetadata().GetName()
+}
+
+func logFilePath(logDir, containerID string) string {
+	return filepath.Join(logDir, containerID+".log")
 }
 
 func (r *processRuntime) has(key string) bool {
@@ -146,7 +152,11 @@ func (r *processRuntime) start(pod *v1.Pod) error {
 }
 
 func containerName(pod *v1.Pod) string {
-	return fmt.Sprintf("nimbus-%s-%s", pod.GetMetadata().GetNamespace(), pod.GetMetadata().GetName())
+	return containerNameRaw(pod.GetMetadata().GetNamespace(), pod.GetMetadata().GetName())
+}
+
+func containerNameRaw(namespace, name string) string {
+	return fmt.Sprintf("nimbus-%s-%s", namespace, name)
 }
 
 func removeContainerdContainer(id string) {
@@ -211,6 +221,17 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 	}
 
 	args := []string{"run", "-d", "--net-host"}
+	if r.logDir != "" {
+		if err := os.MkdirAll(r.logDir, 0o755); err != nil {
+			return fmt.Errorf("agent: create log dir %s: %w", r.logDir, err)
+		}
+		logPath, err := filepath.Abs(logFilePath(r.logDir, id))
+		if err != nil {
+			return fmt.Errorf("agent: resolve log path: %w", err)
+		}
+		os.Remove(logPath) //nolint:errcheck
+		args = append(args, "--log-uri", "file://"+logPath)
+	}
 	if limits := c.GetResources().GetLimits(); limits != nil {
 		if millis := limits.GetCpuMillis(); millis > 0 {
 			args = append(args, "--cpus", fmt.Sprintf("%.3f", float64(millis)/1000))

@@ -114,33 +114,62 @@ func TestAgentRestartsFailedPodUnderAlwaysPolicy(t *testing.T) {
 	t.Fatalf("pod was not restarted at least twice within the deadline (last status: %v)", client.statusOf(podKey(pod)))
 }
 
-func TestAgentRemovesOrphanedContainerNotInDesiredPods(t *testing.T) {
+func TestRemoveOrphanContainersLeavesUnrelatedContainersAlone(t *testing.T) {
 	containerdAvailable(t)
+
+	before, err := listContainerdTaskStatuses()
+	if err != nil {
+		t.Fatalf("listContainerdTaskStatuses: %v", err)
+	}
+	wanted := make(map[string]bool, len(before))
+	for name := range before {
+		wanted[name] = true
+	}
+
+	desiredPod := containerdPod("agent-desired", "docker.io/library/alpine:latest", []string{"sleep", "60"})
+	desiredID := containerName(desiredPod)
+	defer removeContainerdContainer(desiredID)
+	desiredRuntime := newProcessRuntime()
+	if err := desiredRuntime.start(desiredPod); err != nil {
+		t.Fatalf("start desired container: %v", err)
+	}
+	wanted[desiredID] = true
 
 	orphanPod := containerdPod("agent-orphan", "docker.io/library/alpine:latest", []string{"sleep", "60"})
 	orphanID := containerName(orphanPod)
 	defer removeContainerdContainer(orphanID)
-
-	standalone := newProcessRuntime()
-	if err := standalone.start(orphanPod); err != nil {
+	orphanRuntime := newProcessRuntime()
+	if err := orphanRuntime.start(orphanPod); err != nil {
 		t.Fatalf("start orphan container: %v", err)
 	}
 
-	client := newFakePodServiceClient()
-	a := New(Config{NodeName: "test-node"}, client, nil)
-
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		a.reconcile(context.Background())
+		removeOrphanContainers(wanted)
 		statuses, err := listContainerdTaskStatuses()
 		if err == nil {
-			if _, ok := statuses[orphanID]; !ok {
-				return
+			if _, stillThere := statuses[orphanID]; !stillThere {
+				break
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatal("orphaned container was not removed by reconcileOrphanContainers")
+
+	statuses, err := listContainerdTaskStatuses()
+	if err != nil {
+		t.Fatalf("listContainerdTaskStatuses after cleanup: %v", err)
+	}
+	if _, ok := statuses[orphanID]; ok {
+		t.Errorf("orphan container %s was not removed", orphanID)
+	}
+	if _, ok := statuses[desiredID]; !ok {
+		t.Error("desired container was removed by orphan cleanup, want it kept")
+	}
+	for name := range before {
+		if _, ok := statuses[name]; !ok {
+			t.Errorf("pre-existing container %q was removed by orphan cleanup, want it left alone", name)
+		}
+	}
 }
 
 func TestAgentIgnoresPodsAssignedToOtherNodes(t *testing.T) {

@@ -5,6 +5,8 @@ import (
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
+	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"time"
@@ -31,6 +33,7 @@ type Config struct {
 	CostModel     finops.CostModel
 	Username      string
 	Password      string
+	AgentLogPort  int
 }
 
 func NewHandler(cfg Config) (http.Handler, error) {
@@ -48,6 +51,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("/api/finops", cfg.handleFinops)
 	mux.HandleFunc("/api/cicd", cfg.handleCICD)
 	mux.HandleFunc("/api/metrics", cfg.handleMetrics)
+	mux.HandleFunc("/api/logs", cfg.handleLogs)
 
 	if cfg.Password == "" {
 		return mux, nil
@@ -85,6 +89,62 @@ func (cfg Config) handlePods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeProto(w, &v1.ListPodsResponse{Items: items})
+}
+
+func (cfg Config) handleLogs(w http.ResponseWriter, r *http.Request) {
+	namespace := r.URL.Query().Get("namespace")
+	if namespace == "" {
+		namespace = "default"
+	}
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "name query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	pod, err := cfg.Pods.Get(r.Context(), namespace, name)
+	if err != nil {
+		http.Error(w, "pod not found: "+err.Error(), http.StatusNotFound)
+		return
+	}
+	nodeName := pod.GetSpec().GetNodeName()
+	if nodeName == "" {
+		http.Error(w, "pod is not scheduled to a node yet", http.StatusNotFound)
+		return
+	}
+
+	node, err := cfg.Nodes.Get(r.Context(), "", nodeName)
+	if err != nil {
+		http.Error(w, "node not found: "+err.Error(), http.StatusNotFound)
+		return
+	}
+	internalIP := node.GetStatus().GetInternalIp()
+	if internalIP == "" {
+		http.Error(w, "node has no internal IP recorded", http.StatusInternalServerError)
+		return
+	}
+
+	port := cfg.AgentLogPort
+	if port <= 0 {
+		port = 10250
+	}
+
+	upstream := fmt.Sprintf("http://%s:%d/logs?%s", internalIP, port, r.URL.RawQuery)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, upstream, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, "fetch logs from node "+nodeName+": "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body) //nolint:errcheck
 }
 
 func (cfg Config) handleDeployments(w http.ResponseWriter, r *http.Request) {

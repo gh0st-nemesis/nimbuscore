@@ -165,22 +165,69 @@ function phaseKind(phase) {
   return "muted";
 }
 
+let logsRefreshTimer = null;
+
+async function refreshLogs(namespace, name) {
+  const content = document.getElementById("logs-content");
+  try {
+    const resp = await fetch(`/api/logs?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}&tail=300`, {
+      cache: "no-store",
+    });
+    const text = await resp.text();
+    content.textContent = resp.ok ? (text || "(empty)") : `Error: ${text}`;
+    content.scrollTop = content.scrollHeight;
+  } catch (err) {
+    content.textContent = "Error: " + (err.message || String(err));
+  }
+}
+
+function openLogsModal(namespace, name) {
+  const modal = document.getElementById("logs-modal");
+  document.getElementById("logs-modal-title").textContent = `Logs: ${namespace}/${name}`;
+  document.getElementById("logs-content").textContent = "loading…";
+  modal.classList.add("open");
+  refreshLogs(namespace, name);
+  clearInterval(logsRefreshTimer);
+  logsRefreshTimer = setInterval(() => refreshLogs(namespace, name), 3000);
+}
+
+function closeLogsModal() {
+  document.getElementById("logs-modal").classList.remove("open");
+  clearInterval(logsRefreshTimer);
+  logsRefreshTimer = null;
+}
+
+function initLogsModal() {
+  const modal = document.getElementById("logs-modal");
+  document.getElementById("close-logs-btn").addEventListener("click", closeLogsModal);
+  modal.addEventListener("click", (ev) => {
+    if (ev.target === modal) closeLogsModal();
+  });
+}
+
 async function refreshPods() {
   const data = await fetchJSON("/api/pods");
   const items = data.items || [];
   document.getElementById("pods-count").textContent = items.length;
-  setRows("pods-table", items, 5, (p) => {
+  setRows("pods-table", items, 6, (p) => {
     const tr = document.createElement("tr");
     const status = p.status || {};
     const spec = p.spec || {};
-    tr.appendChild(el("td", null, p.metadata?.namespace || ""));
-    tr.appendChild(el("td", null, p.metadata?.name || ""));
+    const namespace = p.metadata?.namespace || "";
+    const name = p.metadata?.name || "";
+    tr.appendChild(el("td", null, namespace));
+    tr.appendChild(el("td", null, name));
     const phaseTd = document.createElement("td");
     const phase = status.phase || "POD_PHASE_UNSPECIFIED";
     phaseTd.appendChild(badge(phase.replace("POD_PHASE_", "").toLowerCase(), phaseKind(phase)));
     tr.appendChild(phaseTd);
     tr.appendChild(el("td", null, spec.nodeName || "—"));
     tr.appendChild(el("td", null, String(status.restartCount || 0)));
+    const actionsTd = document.createElement("td");
+    const logsBtn = el("button", "btn-ghost btn-small", "Logs");
+    logsBtn.addEventListener("click", () => openLogsModal(namespace, name));
+    actionsTd.appendChild(logsBtn);
+    tr.appendChild(actionsTd);
     return tr;
   });
 }
@@ -508,6 +555,7 @@ async function refreshAll() {
 
 initTabs();
 initDeploymentForm();
+initLogsModal();
 refreshAll();
 setInterval(refreshAll, 5000);
 setInterval(updateClock, 1000);

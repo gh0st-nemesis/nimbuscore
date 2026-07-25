@@ -172,6 +172,35 @@ func TestContainerdRuntimePassesEnvVars(t *testing.T) {
 	}
 }
 
+func TestContainerdRuntimeWritesLogsToLogDir(t *testing.T) {
+	containerdAvailable(t)
+
+	dir := t.TempDir()
+	r := newProcessRuntime()
+	r.logDir = dir
+
+	pod := containerdPod("ctr-logs", "docker.io/library/alpine:latest", []string{"sh", "-c", "echo hello-from-log-test; sleep 30"})
+	id := containerName(pod)
+	defer removeContainerdContainer(id)
+
+	if err := r.start(pod); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer r.stop(podKey(pod))
+
+	deadline := time.Now().Add(15 * time.Second)
+	var content []byte
+	var err error
+	for time.Now().Before(deadline) {
+		content, err = tailFile(logFilePath(dir, id), 100)
+		if err == nil && strings.Contains(string(content), "hello-from-log-test") {
+			return
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	t.Fatalf("log file never contained expected output (last read err=%v content=%q)", err, content)
+}
+
 func TestContainerdRuntimeStopRemovesTask(t *testing.T) {
 	containerdAvailable(t)
 

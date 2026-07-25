@@ -38,6 +38,8 @@ func main() {
 	heartbeatInterval := fs.Duration("heartbeat-interval", 5*time.Second, "interval between heartbeats")
 	otelExporter := fs.String("otel-exporter", "none", "OpenTelemetry exporter: none, stdout, or otlp")
 	otlpEndpoint := fs.String("otlp-endpoint", "127.0.0.1:4317", "OTLP gRPC collector endpoint (when -otel-exporter=otlp)")
+	logDir := fs.String("log-dir", "./data/logs", "directory where container stdout/stderr logs are written")
+	logAddr := fs.String("log-addr", ":10250", "HTTP listen address serving container logs to the control plane")
 	fs.Parse(os.Args[1:])
 
 	if *controlPlaneAddr == "" || *joinToken == "" {
@@ -121,7 +123,14 @@ func main() {
 
 	go heartbeatLoop(ctx, nodeClient, *nodeName, capacity, *heartbeatInterval)
 
-	a := agent.New(agent.Config{NodeName: *nodeName, InternalIP: internalIP}, v1.NewPodServiceClient(conn), v1.NewServiceServiceClient(conn))
+	go func() {
+		log.Printf("agent: log server listening on %s", *logAddr)
+		if err := agent.StartLogServer(*logAddr, *logDir); err != nil {
+			log.Printf("agent: %v", err)
+		}
+	}()
+
+	a := agent.New(agent.Config{NodeName: *nodeName, InternalIP: internalIP, LogDir: *logDir}, v1.NewPodServiceClient(conn), v1.NewServiceServiceClient(conn))
 	if err := a.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("agent: %v", err)
 	}
