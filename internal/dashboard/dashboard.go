@@ -2,7 +2,6 @@ package dashboard
 
 import (
 	"context"
-	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -45,37 +44,35 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		return nil, err
 	}
 
-	mux := http.NewServeMux()
-	mux.Handle("/", http.FileServer(http.FS(static)))
-	mux.HandleFunc("/api/nodes", cfg.handleNodes)
-	mux.HandleFunc("/api/pods", cfg.handlePods)
-	mux.HandleFunc("/api/deployments", cfg.handleDeployments)
-	mux.HandleFunc("/api/services", cfg.handleServices)
-	mux.HandleFunc("/api/finops", cfg.handleFinops)
-	mux.HandleFunc("/api/cicd", cfg.handleCICD)
-	mux.HandleFunc("/api/metrics", cfg.handleMetrics)
-	mux.HandleFunc("/api/logs", cfg.handleLogs)
-	mux.HandleFunc("/api/namespaces", cfg.handleNamespaces)
-	mux.HandleFunc("/api/files", cfg.handleFiles)
+	appMux := http.NewServeMux()
+	appMux.Handle("/", http.FileServer(http.FS(static)))
+	appMux.HandleFunc("/api/nodes", cfg.handleNodes)
+	appMux.HandleFunc("/api/pods", cfg.handlePods)
+	appMux.HandleFunc("/api/deployments", cfg.handleDeployments)
+	appMux.HandleFunc("/api/services", cfg.handleServices)
+	appMux.HandleFunc("/api/finops", cfg.handleFinops)
+	appMux.HandleFunc("/api/cicd", cfg.handleCICD)
+	appMux.HandleFunc("/api/metrics", cfg.handleMetrics)
+	appMux.HandleFunc("/api/logs", cfg.handleLogs)
+	appMux.HandleFunc("/api/namespaces", cfg.handleNamespaces)
+	appMux.HandleFunc("/api/files", cfg.handleFiles)
 
+	mux := http.NewServeMux()
 	if cfg.Password == "" {
+		mux.Handle("/", appMux)
 		return mux, nil
 	}
-	return basicAuth(cfg.Username, cfg.Password, mux), nil
-}
 
-func basicAuth(username, password string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, pass, ok := r.BasicAuth()
-		userMatch := subtle.ConstantTimeCompare([]byte(user), []byte(username)) == 1
-		passMatch := subtle.ConstantTimeCompare([]byte(pass), []byte(password)) == 1
-		if !ok || !userMatch || !passMatch {
-			w.Header().Set("WWW-Authenticate", `Basic realm="nimbuscore"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	sess := newSessionAuth(cfg.Username, cfg.Password, static)
+	mux.HandleFunc("/login", sess.handleLoginPage)
+	mux.HandleFunc("/api/login", sess.handleLogin)
+	mux.HandleFunc("/api/logout", sess.handleLogout)
+	fileServer := http.FileServer(http.FS(static))
+	mux.Handle("/style.css", fileServer)
+	mux.Handle("/logo.png", fileServer)
+	mux.Handle("/login.js", fileServer)
+	mux.Handle("/", sess.requireSession(appMux))
+	return mux, nil
 }
 
 func (cfg Config) handleNodes(w http.ResponseWriter, r *http.Request) {

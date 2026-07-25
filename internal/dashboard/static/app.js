@@ -100,6 +100,10 @@ function setRows(tableId, rows, emptyColSpan, renderRow) {
 
 async function fetchJSON(path, options) {
   const resp = await fetch(path, Object.assign({ cache: "no-store" }, options));
+  if (resp.status === 401) {
+    window.location.href = "/login";
+    return new Promise(() => {}); // stop the caller; navigation is already underway
+  }
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     throw new Error(text || (path + ": " + resp.status));
@@ -1484,7 +1488,21 @@ async function refreshAll() {
   ]);
 }
 
+function initLogout() {
+  const btn = document.getElementById("logout-btn");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    try {
+      await fetch("/api/logout", { method: "POST" });
+    } catch (err) {
+      // ignore — redirect to /login regardless, the cookie will simply expire on its own
+    }
+    window.location.href = "/login";
+  });
+}
+
 initTabs();
+initLogout();
 initDeploymentForm();
 initLogsModal();
 initDeploymentPanel();

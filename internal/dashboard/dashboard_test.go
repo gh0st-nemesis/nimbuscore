@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
@@ -942,7 +943,8 @@ func TestDashboardMetricsAggregatesNodeAndPodUsage(t *testing.T) {
 	}
 }
 
-func TestDashboardRequiresBasicAuthWhenPasswordSet(t *testing.T) {
+func newTestHandlerWithAuth(t *testing.T, username, password string) *httptest.Server {
+	t.Helper()
 	s := store.NewMemStore()
 	nodes := registry.New(s, "nodes", func() *v1.Node { return &v1.Node{} })
 	pods := registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} })
@@ -953,43 +955,125 @@ func TestDashboardRequiresBasicAuthWhenPasswordSet(t *testing.T) {
 		DeploymentSvc: apiserver.NewDeploymentService(s, admission.NewChain()),
 		Services:      apiserver.NewServiceService(s),
 		CostModel:     finops.DefaultCostModel(),
-		Username:      "admin",
-		Password:      "s3cret",
+		Username:      username,
+		Password:      password,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
-	srv := httptest.NewServer(handler)
+	return httptest.NewServer(handler)
+}
+
+func TestDashboardRequiresSessionWhenPasswordSet(t *testing.T) {
+	srv := newTestHandlerWithAuth(t, "admin", "s3cret")
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/api/nodes")
 	if err != nil {
-		t.Fatalf("GET without credentials: %v", err)
+		t.Fatalf("GET without session: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status without credentials = %d, want 401", resp.StatusCode)
+		t.Fatalf("status without session = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestDashboardRootRedirectsToLoginWithoutSession(t *testing.T) {
+	srv := newTestHandlerWithAuth(t, "admin", "s3cret")
+	defer srv.Close()
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d, want 302 redirect to /login", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/login" {
+		t.Errorf("redirect location = %q, want /login", loc)
+	}
+}
+
+func TestDashboardLoginRejectsWrongCredentials(t *testing.T) {
+	srv := newTestHandlerWithAuth(t, "admin", "s3cret")
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/api/login", "application/json", strings.NewReader(`{"username":"admin","password":"wrong"}`))
+	if err != nil {
+		t.Fatalf("POST /api/login: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status with wrong password = %d, want 401", resp.StatusCode)
+	}
+	for _, c := range resp.Cookies() {
+		if c.Name == "nimbus_session" {
+			t.Fatal("a session cookie was set despite wrong credentials")
+		}
+	}
+}
+
+func TestDashboardLoginGrantsSessionAndLogoutRevokesIt(t *testing.T) {
+	srv := newTestHandlerWithAuth(t, "admin", "s3cret")
+	defer srv.Close()
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+
+	loginResp, err := client.Post(srv.URL+"/api/login", "application/json", strings.NewReader(`{"username":"admin","password":"s3cret"}`))
+	if err != nil {
+		t.Fatalf("POST /api/login: %v", err)
+	}
+	loginResp.Body.Close()
+	if loginResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("login status = %d, want 204", loginResp.StatusCode)
 	}
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/nodes", nil)
-	req.SetBasicAuth("admin", "s3cret")
-	resp2, err := http.DefaultClient.Do(req)
+	apiResp, err := client.Get(srv.URL + "/api/nodes")
 	if err != nil {
-		t.Fatalf("GET with credentials: %v", err)
+		t.Fatalf("GET /api/nodes with session: %v", err)
 	}
-	defer resp2.Body.Close()
-	if resp2.StatusCode != http.StatusOK {
-		t.Fatalf("status with correct credentials = %d, want 200", resp2.StatusCode)
+	apiResp.Body.Close()
+	if apiResp.StatusCode != http.StatusOK {
+		t.Fatalf("status with session cookie = %d, want 200", apiResp.StatusCode)
 	}
 
-	req3, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/nodes", nil)
-	req3.SetBasicAuth("admin", "wrong")
-	resp3, err := http.DefaultClient.Do(req3)
+	logoutResp, err := client.Post(srv.URL+"/api/logout", "application/json", nil)
 	if err != nil {
-		t.Fatalf("GET with wrong password: %v", err)
+		t.Fatalf("POST /api/logout: %v", err)
 	}
-	defer resp3.Body.Close()
-	if resp3.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status with wrong password = %d, want 401", resp3.StatusCode)
+	logoutResp.Body.Close()
+	if logoutResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("logout status = %d, want 204", logoutResp.StatusCode)
+	}
+
+	afterLogout, err := client.Get(srv.URL + "/api/nodes")
+	if err != nil {
+		t.Fatalf("GET /api/nodes after logout: %v", err)
+	}
+	afterLogout.Body.Close()
+	if afterLogout.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status after logout = %d, want 401", afterLogout.StatusCode)
+	}
+}
+
+func TestDashboardLoginPageAndAssetsAreReachableWithoutSession(t *testing.T) {
+	srv := newTestHandlerWithAuth(t, "admin", "s3cret")
+	defer srv.Close()
+
+	for _, path := range []string{"/login", "/style.css", "/login.js"} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s status = %d, want 200 (must be reachable without a session)", path, resp.StatusCode)
+		}
 	}
 }
