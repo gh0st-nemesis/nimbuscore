@@ -42,6 +42,8 @@ func main() {
 	logAddr := fs.String("log-addr", ":10250", "HTTP listen address serving container logs to the control plane")
 	buildDir := fs.String("build-dir", "./data/builds", "directory used to clone and build container images from Git repos")
 	buildkitAddr := fs.String("buildkit-addr", "unix:///run/buildkit/buildkitd.sock", "buildkitd address used to build images from Git repos")
+	volumesDir := fs.String("volumes-dir", "./data/volumes", "directory where persistent volume data is stored on this node")
+	filesAddr := fs.String("files-addr", ":10251", "HTTP listen address serving volume file operations to the control plane")
 	fs.Parse(os.Args[1:])
 
 	if *controlPlaneAddr == "" || *joinToken == "" {
@@ -132,12 +134,20 @@ func main() {
 		}
 	}()
 
+	go func() {
+		log.Printf("agent: files server listening on %s", *filesAddr)
+		if err := agent.StartFilesServer(*filesAddr, *volumesDir); err != nil {
+			log.Printf("agent: %v", err)
+		}
+	}()
+
 	a := agent.New(agent.Config{
 		NodeName:     *nodeName,
 		InternalIP:   internalIP,
 		LogDir:       *logDir,
 		BuildDir:     *buildDir,
 		BuildkitAddr: *buildkitAddr,
+		VolumesDir:   *volumesDir,
 	}, v1.NewPodServiceClient(conn), v1.NewServiceServiceClient(conn))
 	if err := a.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("agent: %v", err)

@@ -21,6 +21,7 @@ message VolumeStatus {
   VolumePhase phase = 1;
   int64 capacity_bytes = 2;
   string message = 3;
+  string node_name = 4;
 }
 
 message Volume {

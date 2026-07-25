@@ -122,6 +122,7 @@ type VolumeStatus struct {
 	Phase         VolumePhase            `protobuf:"varint,1,opt,name=phase,proto3,enum=nimbuscore.v1.VolumePhase" json:"phase,omitempty"`
 	CapacityBytes int64                  `protobuf:"varint,2,opt,name=capacity_bytes,json=capacityBytes,proto3" json:"capacity_bytes,omitempty"`
 	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	NodeName      string                 `protobuf:"bytes,4,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -173,6 +174,13 @@ func (x *VolumeStatus) GetCapacityBytes() int64 {
 func (x *VolumeStatus) GetMessage() string {
 	if x != nil {
 		return x.Message
+	}
+	return ""
+}
+
+func (x *VolumeStatus) GetNodeName() string {
+	if x != nil {
+		return x.NodeName
 	}
 	return ""
 }
@@ -576,11 +584,12 @@ const file_volume_proto_rawDesc = "" +
 	"\fvolume.proto\x12\rnimbuscore.v1\x1a\fcommon.proto\"5\n" +
 	"\n" +
 	"VolumeSpec\x12'\n" +
-	"\x0frequested_bytes\x18\x01 \x01(\x03R\x0erequestedBytes\"\x81\x01\n" +
+	"\x0frequested_bytes\x18\x01 \x01(\x03R\x0erequestedBytes\"\x9e\x01\n" +
 	"\fVolumeStatus\x120\n" +
 	"\x05phase\x18\x01 \x01(\x0e2\x1a.nimbuscore.v1.VolumePhaseR\x05phase\x12%\n" +
 	"\x0ecapacity_bytes\x18\x02 \x01(\x03R\rcapacityBytes\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\xa3\x01\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1b\n" +
+	"\tnode_name\x18\x04 \x01(\tR\bnodeName\"\xa3\x01\n" +
 	"\x06Volume\x125\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x19.nimbuscore.v1.ObjectMetaR\bmetadata\x12-\n" +
 	"\x04spec\x18\x02 \x01(\v2\x19.nimbuscore.v1.VolumeSpecR\x04spec\x123\n" +

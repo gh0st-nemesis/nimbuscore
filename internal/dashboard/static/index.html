@@ -160,6 +160,8 @@
 
       <div id="source-image-fields" class="source-fields">
         <label>Image <input name="image" placeholder="nginx:alpine"></label>
+        <label class="checkbox-label"><input type="checkbox" name="addPersistentStorage" id="persistent-storage-checkbox"> Add persistent file storage</label>
+        <label id="mount-path-field" class="hidden"><span>Mount path</span> <input name="mountPath" id="mount-path-input" placeholder="/usr/share/nginx/html"></label>
       </div>
 
       <div id="source-git-fields" class="source-fields hidden">
@@ -242,10 +244,11 @@
   </div>
 
   <nav class="side-panel-tabs">
-    <button class="side-tab active" data-panel-tab="overview">Overview</button>
-    <button class="side-tab" data-panel-tab="variables">Variables</button>
-    <button class="side-tab" data-panel-tab="logs">Logs</button>
-    <button class="side-tab" data-panel-tab="settings">Settings</button>
+    <button class="side-tab active" data-panel-tab="overview"><span class="side-tab-icon" data-icon="overview"></span>Overview</button>
+    <button class="side-tab" data-panel-tab="variables"><span class="side-tab-icon" data-icon="variables"></span>Variables</button>
+    <button class="side-tab" data-panel-tab="logs"><span class="side-tab-icon" data-icon="logs"></span>Logs</button>
+    <button class="side-tab" data-panel-tab="settings"><span class="side-tab-icon" data-icon="settings"></span>Settings</button>
+    <button class="side-tab hidden" id="panel-files-tab-btn" data-panel-tab="files"><span class="side-tab-icon" data-icon="files"></span>Files</button>
   </nav>
 
   <div class="side-panel-body">
@@ -299,6 +302,29 @@
       <label>Replicas <input form="panel-form" name="replicas" type="number" min="1" value="1"></label>
       <label>Container port <input form="panel-form" name="port" type="number" min="0" placeholder="80"></label>
       <label>Command (space-separated; quote args containing spaces) <input form="panel-form" name="command" placeholder="sleep 3600"></label>
+    </div>
+
+    <div id="panel-tab-files" class="panel-tab-content">
+      <div class="files-layout">
+        <div class="files-list-col">
+          <div id="panel-files-list" class="files-list"></div>
+          <div class="files-list-actions">
+            <button type="button" id="panel-new-file-btn" class="btn-ghost btn-small">+ New file</button>
+            <button type="button" id="panel-upload-file-btn" class="btn-ghost btn-small">Upload</button>
+            <input type="file" id="panel-upload-file-input" class="hidden">
+          </div>
+        </div>
+        <div class="files-editor-col">
+          <div class="files-editor-header">
+            <span id="panel-files-current-path" class="files-current-path">Select a file</span>
+            <div class="files-editor-actions">
+              <button type="button" id="panel-file-save-btn" class="btn-ghost btn-small" disabled>Save</button>
+              <button type="button" id="panel-file-delete-btn" class="btn-ghost btn-small danger" disabled>Delete</button>
+            </div>
+          </div>
+          <textarea id="panel-files-editor" class="files-editor" placeholder="Select a file to edit…" disabled></textarea>
+        </div>
+      </div>
     </div>
   </div>
 

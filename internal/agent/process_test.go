@@ -2,6 +2,7 @@ package agent
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -163,4 +164,58 @@ func TestProcessRuntimeRestartIncrementsCount(t *testing.T) {
 		t.Errorf("restart count = %d, want 1", got)
 	}
 	r.stop(key)
+}
+
+func TestEnsureVolumeDirCreatesAndReturnsAbsolutePath(t *testing.T) {
+	r := newProcessRuntime()
+	r.volumesDir = t.TempDir()
+
+	dir, err := r.ensureVolumeDir("default", "data")
+	if err != nil {
+		t.Fatalf("ensureVolumeDir: %v", err)
+	}
+	if !filepath.IsAbs(dir) {
+		t.Errorf("ensureVolumeDir returned non-absolute path %q", dir)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat created volume dir: %v", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("%q is not a directory", dir)
+	}
+}
+
+func TestEnsureVolumeDirIsIdempotent(t *testing.T) {
+	r := newProcessRuntime()
+	r.volumesDir = t.TempDir()
+
+	first, err := r.ensureVolumeDir("default", "data")
+	if err != nil {
+		t.Fatalf("ensureVolumeDir (first): %v", err)
+	}
+	second, err := r.ensureVolumeDir("default", "data")
+	if err != nil {
+		t.Fatalf("ensureVolumeDir (second): %v", err)
+	}
+	if first != second {
+		t.Errorf("ensureVolumeDir returned different paths across calls: %q vs %q", first, second)
+	}
+}
+
+func TestEnsureVolumeDirIsolatesNamespaces(t *testing.T) {
+	r := newProcessRuntime()
+	r.volumesDir = t.TempDir()
+
+	a, err := r.ensureVolumeDir("team-a", "data")
+	if err != nil {
+		t.Fatalf("ensureVolumeDir (team-a): %v", err)
+	}
+	b, err := r.ensureVolumeDir("team-b", "data")
+	if err != nil {
+		t.Fatalf("ensureVolumeDir (team-b): %v", err)
+	}
+	if a == b {
+		t.Errorf("volumes named %q in different namespaces resolved to the same directory %q", "data", a)
+	}
 }

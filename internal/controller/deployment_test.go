@@ -15,7 +15,8 @@ func newTestReconciler() (*DeploymentReconciler, *registry.Registry[*v1.Deployme
 	deployments := registry.New(s, "deployments", func() *v1.Deployment { return &v1.Deployment{} })
 	pods := registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} })
 	nodes := registry.New(s, "nodes", func() *v1.Node { return &v1.Node{} })
-	return NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 0), deployments, pods, nodes
+	volumes := registry.New(s, "volumes", func() *v1.Volume { return &v1.Volume{} })
+	return NewDeploymentReconciler(deployments, pods, nodes, volumes, scheduler.New(), 0), deployments, pods, nodes
 }
 
 func seedReadyNode(t testing.TB, ctx context.Context, nodes *registry.Registry[*v1.Node], name string) {
@@ -350,5 +351,106 @@ func TestScheduleUnassignedAccountsForExistingUsage(t *testing.T) {
 	}
 	if newPod.GetSpec().GetNodeName() != "roomy" {
 		t.Errorf("scheduled onto %q, want roomy (tight only has 100m free, needs 500m)", newPod.GetSpec().GetNodeName())
+	}
+}
+
+func TestVolumeBackedDeploymentReplicasClampedToOne(t *testing.T) {
+	ctx := context.Background()
+	r, deployments, pods, nodes := newTestReconciler()
+	seedReadyNode(t, ctx, nodes, "node-1")
+
+	d := &v1.Deployment{
+		Metadata: &v1.ObjectMeta{Name: "site", Namespace: "default"},
+		Spec: &v1.DeploymentSpec{
+			Replicas: 3,
+			Selector: map[string]string{"app": "site"},
+			Template: &v1.PodSpec{
+				Containers: []*v1.Container{{Name: "site", Image: "nginx"}},
+				Volumes:    []*v1.VolumeMount{{VolumeName: "data", MountPath: "/usr/share/nginx/html"}},
+			},
+		},
+	}
+	if err := deployments.Put(ctx, "default", "site", d); err != nil {
+		t.Fatalf("seed deployment: %v", err)
+	}
+	if err := r.reconcileOne(ctx, d); err != nil {
+		t.Fatalf("reconcileOne: %v", err)
+	}
+
+	got, err := pods.List(ctx, "default")
+	if err != nil {
+		t.Fatalf("list pods: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("volume-backed deployment requesting 3 replicas should be clamped to 1, got %d pods", len(got))
+	}
+}
+
+func TestVolumeBackedPodPinnedToClaimedNode(t *testing.T) {
+	ctx := context.Background()
+	r, deployments, pods, nodes := newTestReconciler()
+	seedReadyNode(t, ctx, nodes, "node-1")
+	seedReadyNode(t, ctx, nodes, "node-2")
+
+	vol := &v1.Volume{
+		Metadata: &v1.ObjectMeta{Name: "data", Namespace: "default"},
+		Spec:     &v1.VolumeSpec{RequestedBytes: 1 << 30},
+		Status:   &v1.VolumeStatus{Phase: v1.VolumePhase_VOLUME_PHASE_BOUND},
+	}
+	if err := r.volumes.Put(ctx, "default", "data", vol); err != nil {
+		t.Fatalf("seed volume: %v", err)
+	}
+
+	d := &v1.Deployment{
+		Metadata: &v1.ObjectMeta{Name: "site", Namespace: "default"},
+		Spec: &v1.DeploymentSpec{
+			Replicas: 1,
+			Selector: map[string]string{"app": "site"},
+			Template: &v1.PodSpec{
+				Containers: []*v1.Container{{Name: "site", Image: "nginx"}},
+				Volumes:    []*v1.VolumeMount{{VolumeName: "data", MountPath: "/usr/share/nginx/html"}},
+			},
+		},
+	}
+	if err := deployments.Put(ctx, "default", "site", d); err != nil {
+		t.Fatalf("seed deployment: %v", err)
+	}
+	if err := r.reconcileOne(ctx, d); err != nil {
+		t.Fatalf("reconcileOne (initial): %v", err)
+	}
+
+	vol, err := r.volumes.Get(ctx, "default", "data")
+	if err != nil {
+		t.Fatalf("get volume: %v", err)
+	}
+	claimedNode := vol.GetStatus().GetNodeName()
+	if claimedNode == "" {
+		t.Fatal("volume was not claimed by any node")
+	}
+	if vol.GetMetadata().GetLabels()[OwnerDeploymentLabel] != "site" {
+		t.Errorf("volume owner label = %q, want %q", vol.GetMetadata().GetLabels()[OwnerDeploymentLabel], "site")
+	}
+
+	// Simulate the pod being lost (e.g. deleted) and recreated: the replacement
+	// must land on the SAME node the volume is already claimed on, regardless
+	// of what the generic scheduler would otherwise pick.
+	before, err := pods.List(ctx, "default")
+	if err != nil || len(before) != 1 {
+		t.Fatalf("expected 1 pod, got %d (err=%v)", len(before), err)
+	}
+	if err := pods.Delete(ctx, "default", before[0].GetMetadata().GetName()); err != nil {
+		t.Fatalf("delete pod: %v", err)
+	}
+
+	if err := r.reconcileOne(ctx, d); err != nil {
+		t.Fatalf("reconcileOne (after pod loss): %v", err)
+	}
+
+	after, err := pods.List(ctx, "default")
+	if err != nil || len(after) != 1 {
+		t.Fatalf("expected 1 replacement pod, got %d (err=%v)", len(after), err)
+	}
+	if after[0].GetSpec().GetNodeName() != claimedNode {
+		t.Errorf("replacement pod landed on %q, want the already-claimed node %q", after[0].GetSpec().GetNodeName(), claimedNode)
 	}
 }

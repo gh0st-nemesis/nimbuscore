@@ -16,9 +16,10 @@ func TestDeploymentReconcilerDoesNotClobberConcurrentReplicaChange(t *testing.T)
 	deployments := registry.New(s, "deployments", func() *v1.Deployment { return &v1.Deployment{} })
 	pods := registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} })
 	nodes := registry.New(s, "nodes", func() *v1.Node { return &v1.Node{} })
+	volumes := registry.New(s, "volumes", func() *v1.Volume { return &v1.Volume{} })
 	seedReadyNode(t, ctx, nodes, "node-1")
 
-	reconciler := NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 0)
+	reconciler := NewDeploymentReconciler(deployments, pods, nodes, volumes, scheduler.New(), 0)
 	hpa := NewHorizontalAutoscaler(deployments, pods, nodes, 0)
 
 	d := &v1.Deployment{

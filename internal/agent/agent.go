@@ -16,6 +16,7 @@ type Config struct {
 	LogDir       string
 	BuildDir     string
 	BuildkitAddr string
+	VolumesDir   string
 }
 
 type Agent struct {
@@ -34,6 +35,7 @@ func New(cfg Config, pods v1.PodServiceClient, services v1.ServiceServiceClient)
 	runtime.logDir = cfg.LogDir
 	runtime.buildDir = cfg.BuildDir
 	runtime.buildkitAddr = cfg.BuildkitAddr
+	runtime.volumesDir = cfg.VolumesDir
 	return &Agent{cfg: cfg, pods: pods, services: services, runtime: runtime, nodePorts: newNodePortManager()}
 }
 

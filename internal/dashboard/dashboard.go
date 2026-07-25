@@ -25,16 +25,18 @@ import (
 var staticFiles embed.FS
 
 type Config struct {
-	Nodes         *registry.Registry[*v1.Node]
-	Pods          *registry.Registry[*v1.Pod]
-	DeploymentSvc v1.DeploymentServiceServer
-	Services      v1.ServiceServiceServer
-	Namespaces    v1.NamespaceServiceServer
-	GitOps        *gitops.Reconciler
-	CostModel     finops.CostModel
-	Username      string
-	Password      string
-	AgentLogPort  int
+	Nodes          *registry.Registry[*v1.Node]
+	Pods           *registry.Registry[*v1.Pod]
+	DeploymentSvc  v1.DeploymentServiceServer
+	Services       v1.ServiceServiceServer
+	Namespaces     v1.NamespaceServiceServer
+	Volumes        v1.VolumeServiceServer
+	GitOps         *gitops.Reconciler
+	CostModel      finops.CostModel
+	Username       string
+	Password       string
+	AgentLogPort   int
+	AgentFilesPort int
 }
 
 func NewHandler(cfg Config) (http.Handler, error) {
@@ -54,6 +56,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("/api/metrics", cfg.handleMetrics)
 	mux.HandleFunc("/api/logs", cfg.handleLogs)
 	mux.HandleFunc("/api/namespaces", cfg.handleNamespaces)
+	mux.HandleFunc("/api/files", cfg.handleFiles)
 
 	if cfg.Password == "" {
 		return mux, nil
@@ -141,6 +144,43 @@ func (cfg Config) handleNamespaces(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// resolveNodeIP looks up a node's internal IP, the address the dashboard uses
+// to reach that node's per-node agent HTTP endpoints (logs, files).
+func (cfg Config) resolveNodeIP(ctx context.Context, nodeName string) (string, error) {
+	node, err := cfg.Nodes.Get(ctx, "", nodeName)
+	if err != nil {
+		return "", fmt.Errorf("node not found: %w", err)
+	}
+	ip := node.GetStatus().GetInternalIp()
+	if ip == "" {
+		return "", fmt.Errorf("node %q has no internal IP recorded", nodeName)
+	}
+	return ip, nil
+}
+
+// proxyToAgent forwards the incoming request (method, query string, and body)
+// to a node-local agent HTTP endpoint and streams the response back verbatim.
+func proxyToAgent(w http.ResponseWriter, r *http.Request, internalIP string, port int, path string) {
+	upstream := fmt.Sprintf("http://%s:%d%s?%s", internalIP, port, path, r.URL.RawQuery)
+	upReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstream, r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	resp, err := http.DefaultClient.Do(upReq)
+	if err != nil {
+		http.Error(w, "fetch from node: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body) //nolint:errcheck
+}
+
 func (cfg Config) handleLogs(w http.ResponseWriter, r *http.Request) {
 	namespace := r.URL.Query().Get("namespace")
 	if namespace == "" {
@@ -163,14 +203,9 @@ func (cfg Config) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	node, err := cfg.Nodes.Get(r.Context(), "", nodeName)
+	internalIP, err := cfg.resolveNodeIP(r.Context(), nodeName)
 	if err != nil {
-		http.Error(w, "node not found: "+err.Error(), http.StatusNotFound)
-		return
-	}
-	internalIP := node.GetStatus().GetInternalIp()
-	if internalIP == "" {
-		http.Error(w, "node has no internal IP recorded", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
@@ -178,23 +213,63 @@ func (cfg Config) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if port <= 0 {
 		port = 10250
 	}
+	proxyToAgent(w, r, internalIP, port, "/logs")
+}
 
-	upstream := fmt.Sprintf("http://%s:%d/logs?%s", internalIP, port, r.URL.RawQuery)
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, upstream, nil)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+// handleFiles proxies file-browser operations for a persistent volume to
+// whichever node it's claimed on. It resolves via the Volume's identity
+// rather than a pod's, so browsing/editing keeps working even while the
+// owning deployment's pod is stopped, scaling, or mid-redeploy.
+func (cfg Config) handleFiles(w http.ResponseWriter, r *http.Request) {
+	namespace := r.URL.Query().Get("namespace")
+	if namespace == "" {
+		namespace = "default"
+	}
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "name query parameter is required", http.StatusBadRequest)
 		return
 	}
-	resp, err := http.DefaultClient.Do(req)
+
+	vol, err := cfg.Volumes.GetVolume(r.Context(), &v1.GetVolumeRequest{Namespace: namespace, Name: name})
 	if err != nil {
-		http.Error(w, "fetch logs from node "+nodeName+": "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "volume not found: "+err.Error(), http.StatusNotFound)
 		return
 	}
-	defer resp.Body.Close()
+	nodeName := vol.GetStatus().GetNodeName()
+	if nodeName == "" {
+		http.Error(w, "volume is not yet claimed by any node", http.StatusNotFound)
+		return
+	}
 
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body) //nolint:errcheck
+	internalIP, err := cfg.resolveNodeIP(r.Context(), nodeName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	port := cfg.AgentFilesPort
+	if port <= 0 {
+		port = 10251
+	}
+
+	var op string
+	switch r.Method {
+	case http.MethodGet:
+		op = r.URL.Query().Get("op")
+		if op != "read" {
+			op = "list"
+		}
+	case http.MethodPut:
+		op = "write"
+	case http.MethodDelete:
+		op = "delete"
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	proxyToAgent(w, r, internalIP, port, "/files/"+op)
 }
 
 func (cfg Config) handleDeployments(w http.ResponseWriter, r *http.Request) {
@@ -222,19 +297,21 @@ func (cfg Config) handleDeployments(w http.ResponseWriter, r *http.Request) {
 }
 
 type createDeploymentRequest struct {
-	Name          string            `json:"name"`
-	Namespace     string            `json:"namespace"`
-	Image         string            `json:"image"`
-	GitRepoURL    string            `json:"gitRepoUrl"`
-	GitBranch     string            `json:"gitBranch"`
-	GitDockerfile string            `json:"gitDockerfilePath"`
-	GitContext    string            `json:"gitContextPath"`
-	Replicas      int32             `json:"replicas"`
-	Port          int32             `json:"port"`
-	Command       []string          `json:"command"`
-	Env           map[string]string `json:"env"`
-	CPUMillis     int64             `json:"cpuMillis"`
-	MemoryBytes   int64             `json:"memoryBytes"`
+	Name                 string            `json:"name"`
+	Namespace            string            `json:"namespace"`
+	Image                string            `json:"image"`
+	GitRepoURL           string            `json:"gitRepoUrl"`
+	GitBranch            string            `json:"gitBranch"`
+	GitDockerfile        string            `json:"gitDockerfilePath"`
+	GitContext           string            `json:"gitContextPath"`
+	Replicas             int32             `json:"replicas"`
+	Port                 int32             `json:"port"`
+	Command              []string          `json:"command"`
+	Env                  map[string]string `json:"env"`
+	CPUMillis            int64             `json:"cpuMillis"`
+	MemoryBytes          int64             `json:"memoryBytes"`
+	AddPersistentStorage bool              `json:"addPersistentStorage"`
+	MountPath            string            `json:"mountPath"`
 }
 
 func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request) {
@@ -256,6 +333,14 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 	}
 	if req.Replicas <= 0 {
 		req.Replicas = 1
+	}
+	if req.AddPersistentStorage && req.Replicas > 1 {
+		http.Error(w, "deployments with persistent storage must have replicas = 1", http.StatusBadRequest)
+		return
+	}
+	if req.AddPersistentStorage && req.MountPath == "" {
+		http.Error(w, "mountPath is required when addPersistentStorage is set", http.StatusBadRequest)
+		return
 	}
 
 	_, getErr := cfg.DeploymentSvc.GetDeployment(r.Context(), &v1.GetDeploymentRequest{Namespace: req.Namespace, Name: req.Name})
@@ -299,6 +384,24 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 			Selector: map[string]string{"app": req.Name},
 			Template: &v1.PodSpec{Containers: []*v1.Container{container}},
 		},
+	}
+
+	if req.AddPersistentStorage {
+		// The volume must exist (and be part of the template) before the
+		// Deployment is created — unlike the Service below, which is a
+		// supplementary side effect created after the fact.
+		if _, err := cfg.Volumes.GetVolume(r.Context(), &v1.GetVolumeRequest{Namespace: req.Namespace, Name: req.Name}); err != nil {
+			if _, err := cfg.Volumes.CreateVolume(r.Context(), &v1.CreateVolumeRequest{
+				Volume: &v1.Volume{
+					Metadata: &v1.ObjectMeta{Name: req.Name, Namespace: req.Namespace},
+					Spec:     &v1.VolumeSpec{RequestedBytes: 1 << 30},
+				},
+			}); err != nil {
+				http.Error(w, "create volume: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		deployment.Spec.Template.Volumes = []*v1.VolumeMount{{VolumeName: req.Name, MountPath: req.MountPath}}
 	}
 
 	created, err := cfg.DeploymentSvc.CreateDeployment(r.Context(), &v1.CreateDeploymentRequest{Deployment: deployment})
@@ -395,6 +498,10 @@ func (cfg Config) handleScaleDeployment(w http.ResponseWriter, r *http.Request) 
 	current, err := cfg.DeploymentSvc.GetDeployment(r.Context(), &v1.GetDeploymentRequest{Namespace: req.Namespace, Name: req.Name})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if len(current.GetSpec().GetTemplate().GetVolumes()) > 0 && req.Replicas > 1 {
+		http.Error(w, "deployments with persistent storage must have replicas <= 1", http.StatusBadRequest)
 		return
 	}
 	current.Spec.Replicas = req.Replicas

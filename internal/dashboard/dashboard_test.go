@@ -2,15 +2,20 @@ package dashboard_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 	"github.com/gh0st-nemesis/nimbuscore/internal/admission"
+	"github.com/gh0st-nemesis/nimbuscore/internal/agent"
 	"github.com/gh0st-nemesis/nimbuscore/internal/apiserver"
 	"github.com/gh0st-nemesis/nimbuscore/internal/controller"
+	"github.com/gh0st-nemesis/nimbuscore/internal/csi/hostpath"
 	"github.com/gh0st-nemesis/nimbuscore/internal/dashboard"
 	"github.com/gh0st-nemesis/nimbuscore/internal/finops"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
@@ -23,12 +28,18 @@ func newTestHandler(t *testing.T) (http.Handler, *registry.Registry[*v1.Pod], *r
 	nodes := registry.New(s, "nodes", func() *v1.Node { return &v1.Node{} })
 	pods := registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} })
 
+	csiDriver, err := hostpath.New("test-node", t.TempDir())
+	if err != nil {
+		t.Fatalf("hostpath.New: %v", err)
+	}
+
 	handler, err := dashboard.NewHandler(dashboard.Config{
 		Nodes:         nodes,
 		Pods:          pods,
 		DeploymentSvc: apiserver.NewDeploymentService(s, admission.NewChain()),
 		Services:      apiserver.NewServiceService(s),
 		Namespaces:    apiserver.NewNamespaceService(s),
+		Volumes:       apiserver.NewVolumeService(s, csiDriver),
 		CostModel:     finops.DefaultCostModel(),
 	})
 	if err != nil {
@@ -230,6 +241,212 @@ func TestDashboardCreateDeploymentWithPortAutoCreatesService(t *testing.T) {
 	}
 	if len(svcList.Items) != 1 || svcList.Items[0].Metadata.Name != "web" {
 		t.Errorf("services = %+v, want one service named web", svcList.Items)
+	}
+}
+
+func TestDashboardCreateDeploymentWithPersistentStorageCreatesVolume(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"site","namespace":"default","image":"nginx:alpine","replicas":1,"addPersistentStorage":true,"mountPath":"/usr/share/nginx/html"}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var envelope struct {
+		Deployment struct {
+			Spec struct {
+				Template struct {
+					Volumes []struct {
+						VolumeName string `json:"volumeName"`
+						MountPath  string `json:"mountPath"`
+					} `json:"volumes"`
+				} `json:"template"`
+			} `json:"spec"`
+		} `json:"deployment"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	vols := envelope.Deployment.Spec.Template.Volumes
+	if len(vols) != 1 || vols[0].VolumeName != "site" || vols[0].MountPath != "/usr/share/nginx/html" {
+		t.Fatalf("deployment.spec.template.volumes = %+v, want one mount for site at /usr/share/nginx/html", vols)
+	}
+}
+
+func TestDashboardCreateDeploymentRejectsPersistentStorageWithMultipleReplicas(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"site","namespace":"default","image":"nginx:alpine","replicas":3,"addPersistentStorage":true,"mountPath":"/usr/share/nginx/html"}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (volume-backed deployment with replicas=3)", resp.StatusCode)
+	}
+}
+
+func TestDashboardScaleRejectsVolumeBackedDeploymentAboveOneReplica(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	createBody := strings.NewReader(`{"name":"site","namespace":"default","image":"nginx:alpine","replicas":1,"addPersistentStorage":true,"mountPath":"/usr/share/nginx/html"}`)
+	createResp, err := http.Post(srv.URL+"/api/deployments", "application/json", createBody)
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	createResp.Body.Close()
+	if createResp.StatusCode != http.StatusOK {
+		t.Fatalf("create status = %d, want 200", createResp.StatusCode)
+	}
+
+	scaleBody := strings.NewReader(`{"namespace":"default","name":"site","replicas":2}`)
+	req, err := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments", scaleBody)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	scaleResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments: %v", err)
+	}
+	defer scaleResp.Body.Close()
+	if scaleResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("scale status = %d, want 400 (volume-backed deployment cannot scale above 1)", scaleResp.StatusCode)
+	}
+}
+
+func TestDashboardHandleFilesProxiesToClaimedNode(t *testing.T) {
+	s := store.NewMemStore()
+	nodesReg := registry.New(s, "nodes", func() *v1.Node { return &v1.Node{} })
+	podsReg := registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} })
+	volumesReg := registry.New(s, "volumes", func() *v1.Volume { return &v1.Volume{} })
+
+	csiDriver, err := hostpath.New("test-node", t.TempDir())
+	if err != nil {
+		t.Fatalf("hostpath.New: %v", err)
+	}
+	volumeSvc := apiserver.NewVolumeService(s, csiDriver)
+
+	// Fake per-node agent files server, standing in for a real nimbus-agent.
+	agentSrv := httptest.NewServer(agent.NewFilesHandler(t.TempDir()))
+	defer agentSrv.Close()
+	agentURL, err := url.Parse(agentSrv.URL)
+	if err != nil {
+		t.Fatalf("parse agent url: %v", err)
+	}
+	agentPort, err := strconv.Atoi(agentURL.Port())
+	if err != nil {
+		t.Fatalf("agent port: %v", err)
+	}
+
+	if err := nodesReg.Put(t.Context(), "", "node-1", &v1.Node{
+		Metadata: &v1.ObjectMeta{Name: "node-1"},
+		Status:   &v1.NodeStatus{Ready: true, InternalIp: "127.0.0.1"},
+	}); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+
+	if _, err := volumeSvc.CreateVolume(t.Context(), &v1.CreateVolumeRequest{
+		Volume: &v1.Volume{Metadata: &v1.ObjectMeta{Name: "data", Namespace: "default"}, Spec: &v1.VolumeSpec{RequestedBytes: 1 << 20}},
+	}); err != nil {
+		t.Fatalf("create volume: %v", err)
+	}
+	vol, err := volumesReg.Get(t.Context(), "default", "data")
+	if err != nil {
+		t.Fatalf("get volume: %v", err)
+	}
+	vol.Status.NodeName = "node-1"
+	if err := volumesReg.Put(t.Context(), "default", "data", vol); err != nil {
+		t.Fatalf("claim volume: %v", err)
+	}
+
+	handler, err := dashboard.NewHandler(dashboard.Config{
+		Nodes:          nodesReg,
+		Pods:           podsReg,
+		DeploymentSvc:  apiserver.NewDeploymentService(s, admission.NewChain()),
+		Services:       apiserver.NewServiceService(s),
+		Volumes:        volumeSvc,
+		CostModel:      finops.DefaultCostModel(),
+		AgentFilesPort: agentPort,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	writeReq, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/files?namespace=default&name=data&path=index.html", strings.NewReader("hello from files tab"))
+	writeResp, err := http.DefaultClient.Do(writeReq)
+	if err != nil {
+		t.Fatalf("write via dashboard proxy: %v", err)
+	}
+	if writeResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("write status = %d, want 204", writeResp.StatusCode)
+	}
+
+	readResp, err := http.Get(srv.URL + "/api/files?op=read&namespace=default&name=data&path=index.html")
+	if err != nil {
+		t.Fatalf("read via dashboard proxy: %v", err)
+	}
+	defer readResp.Body.Close()
+	content, err := io.ReadAll(readResp.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if string(content) != "hello from files tab" {
+		t.Errorf("read content = %q, want %q", string(content), "hello from files tab")
+	}
+}
+
+func TestDashboardHandleFilesRejectsUnclaimedVolume(t *testing.T) {
+	s := store.NewMemStore()
+	nodesReg := registry.New(s, "nodes", func() *v1.Node { return &v1.Node{} })
+	podsReg := registry.New(s, "pods", func() *v1.Pod { return &v1.Pod{} })
+
+	csiDriver, err := hostpath.New("test-node", t.TempDir())
+	if err != nil {
+		t.Fatalf("hostpath.New: %v", err)
+	}
+	volumeSvc := apiserver.NewVolumeService(s, csiDriver)
+
+	if _, err := volumeSvc.CreateVolume(t.Context(), &v1.CreateVolumeRequest{
+		Volume: &v1.Volume{Metadata: &v1.ObjectMeta{Name: "data", Namespace: "default"}, Spec: &v1.VolumeSpec{RequestedBytes: 1 << 20}},
+	}); err != nil {
+		t.Fatalf("create volume: %v", err)
+	}
+
+	handler, err := dashboard.NewHandler(dashboard.Config{
+		Nodes:         nodesReg,
+		Pods:          podsReg,
+		DeploymentSvc: apiserver.NewDeploymentService(s, admission.NewChain()),
+		Services:      apiserver.NewServiceService(s),
+		Volumes:       volumeSvc,
+		CostModel:     finops.DefaultCostModel(),
+	})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/files?namespace=default&name=data")
+	if err != nil {
+		t.Fatalf("GET /api/files: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (volume not yet claimed by any node)", resp.StatusCode)
 	}
 }
 

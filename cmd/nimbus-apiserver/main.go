@@ -74,6 +74,7 @@ func main() {
 	dashboardUsername := fs.String("dashboard-username", "admin", "HTTP basic auth username for the dashboard")
 	dashboardPassword := fs.String("dashboard-password", "", "HTTP basic auth password for the dashboard (empty disables auth — dev only)")
 	agentLogPort := fs.Int("agent-log-port", 10250, "port each node's nimbus-agent serves container logs on (see nimbus-agent -log-addr)")
+	agentFilesPort := fs.Int("agent-files-port", 10251, "port each node's nimbus-agent serves volume file operations on (see nimbus-agent -files-addr)")
 	fs.Parse(os.Args[1:])
 
 	if *joinToken == "" {
@@ -147,6 +148,7 @@ func main() {
 	nodes := registry.New(raftStore, "nodes", func() *v1.Node { return &v1.Node{} })
 	deployments := registry.New(raftStore, "deployments", func() *v1.Deployment { return &v1.Deployment{} })
 	pods := registry.New(raftStore, "pods", func() *v1.Pod { return &v1.Pod{} })
+	volumes := registry.New(raftStore, "volumes", func() *v1.Volume { return &v1.Volume{} })
 
 	policyEngine, err := policy.NewEngine()
 	if err != nil {
@@ -160,6 +162,8 @@ func main() {
 		admission.NewImageSignaturePolicy(imageVerifier),
 		admission.NewQuotaPolicy(pods, &v1.ResourceList{CpuMillis: *cpuQuotaMillis, MemoryBytes: *memQuotaBytes}),
 		admission.NewPolicyValidator(policyEngine, policies),
+		admission.NewVolumeReplicasPolicy(),
+		admission.NewVolumeOwnershipPolicy(volumes),
 	)
 
 	csiDriver, err := hostpath.New(*nodeID, *csiHostpathDir)
@@ -172,7 +176,8 @@ func main() {
 	deploymentSvc := apiserver.NewDeploymentService(raftStore, admissionChain)
 	v1.RegisterDeploymentServiceServer(srv.GRPCServer(), deploymentSvc)
 	v1.RegisterAdminServiceServer(srv.GRPCServer(), apiserver.NewAdminService(raftStore))
-	v1.RegisterVolumeServiceServer(srv.GRPCServer(), apiserver.NewVolumeService(raftStore, csiDriver))
+	volumeSvc := apiserver.NewVolumeService(raftStore, csiDriver)
+	v1.RegisterVolumeServiceServer(srv.GRPCServer(), volumeSvc)
 	v1.RegisterNetworkPolicyServiceServer(srv.GRPCServer(), apiserver.NewNetworkPolicyService(raftStore))
 	serviceSvc := apiserver.NewServiceService(raftStore)
 	v1.RegisterServiceServiceServer(srv.GRPCServer(), serviceSvc)
@@ -191,7 +196,7 @@ func main() {
 	}
 
 	mgr := controller.NewManager()
-	mgr.Register(controller.NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 0))
+	mgr.Register(controller.NewDeploymentReconciler(deployments, pods, nodes, volumes, scheduler.New(), 0))
 	mgr.Register(controller.NewPodReconciler(pods, nodes, scheduler.New(), 0))
 	mgr.Register(controller.NewNodeHealthReconciler(nodes, 0, 0))
 	mgr.Register(controller.NewHorizontalAutoscaler(deployments, pods, nodes, 0))
@@ -209,16 +214,18 @@ func main() {
 	go controller.RunWhileLeader(ctx, raftStore, mgr, 0)
 
 	dashboardHandler, err := dashboard.NewHandler(dashboard.Config{
-		Nodes:         nodes,
-		Pods:          pods,
-		DeploymentSvc: deploymentSvc,
-		Services:      serviceSvc,
-		Namespaces:    namespaceSvc,
-		GitOps:        gitOpsReconciler,
-		CostModel:     finops.CostModel{CPUCoreHour: *costCPUCoreHour, MemoryGBHour: *costMemoryGBHour},
-		Username:      *dashboardUsername,
-		Password:      *dashboardPassword,
-		AgentLogPort:  *agentLogPort,
+		Nodes:          nodes,
+		Pods:           pods,
+		DeploymentSvc:  deploymentSvc,
+		Services:       serviceSvc,
+		Namespaces:     namespaceSvc,
+		Volumes:        volumeSvc,
+		GitOps:         gitOpsReconciler,
+		CostModel:      finops.CostModel{CPUCoreHour: *costCPUCoreHour, MemoryGBHour: *costMemoryGBHour},
+		Username:       *dashboardUsername,
+		Password:       *dashboardPassword,
+		AgentLogPort:   *agentLogPort,
+		AgentFilesPort: *agentFilesPort,
 	})
 	if err != nil {
 		log.Fatalf("apiserver: dashboard: %v", err)

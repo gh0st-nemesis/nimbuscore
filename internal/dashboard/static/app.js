@@ -472,6 +472,7 @@ function setPanelTab(tabName) {
     el.classList.toggle("active", el.id === "panel-tab-" + tabName);
   });
   if (tabName === "logs") refreshPanelLogs();
+  if (tabName === "files") refreshPanelFiles();
 }
 
 function panelOverviewCard(label, value) {
@@ -488,8 +489,13 @@ function openDeploymentPanel(d) {
   const status = d.status || {};
   const container = (spec.template?.containers || [])[0] || {};
   const replicas = spec.replicas || 0;
+  const volumeMount = (spec.template?.volumes || [])[0] || null;
 
-  panelDeployment = { namespace, name };
+  panelDeployment = { namespace, name, volumeName: volumeMount?.volumeName || null };
+
+  const filesTabBtn = document.getElementById("panel-files-tab-btn");
+  filesTabBtn.classList.toggle("hidden", !volumeMount);
+  if (!volumeMount && filesTabBtn.classList.contains("active")) setPanelTab("overview");
 
   document.getElementById("panel-title").textContent = name;
   document.getElementById("panel-subtitle").textContent = namespace;
@@ -571,10 +577,123 @@ async function refreshPanelLogs() {
   }
 }
 
+let panelCurrentFile = null;
+
+function filesQueryBase() {
+  return `namespace=${encodeURIComponent(panelDeployment.namespace)}&name=${encodeURIComponent(panelDeployment.volumeName)}`;
+}
+
+async function refreshPanelFiles() {
+  if (!panelDeployment || !panelDeployment.volumeName) return;
+  const list = document.getElementById("panel-files-list");
+  try {
+    const resp = await fetch(`/api/files?${filesQueryBase()}`, { cache: "no-store" });
+    if (!resp.ok) {
+      list.innerHTML = "";
+      list.appendChild(el("div", "empty", "Error loading files"));
+      return;
+    }
+    const entries = await resp.json();
+    list.innerHTML = "";
+    if (!entries || entries.length === 0) {
+      await writePanelFile("index.html", "<!doctype html>\n<html>\n  <head><title>Hello from NimbusCore</title></head>\n  <body>\n    <h1>It works!</h1>\n    <p>Edit this file from the Files tab to change what's served.</p>\n  </body>\n</html>\n");
+      return refreshPanelFiles();
+    }
+    for (const entry of entries) {
+      if (entry.isDir) continue;
+      const btn = el("button", "file-item", entry.name);
+      btn.type = "button";
+      btn.classList.toggle("active", panelCurrentFile === entry.name);
+      btn.addEventListener("click", () => openPanelFile(entry.name));
+      list.appendChild(btn);
+    }
+  } catch (err) {
+    list.innerHTML = "";
+    list.appendChild(el("div", "empty", "Error: " + (err.message || String(err))));
+  }
+}
+
+async function openPanelFile(path) {
+  panelCurrentFile = path;
+  document.querySelectorAll("#panel-files-list .file-item").forEach((btn) => {
+    btn.classList.toggle("active", btn.textContent === path);
+  });
+  const editor = document.getElementById("panel-files-editor");
+  const pathLabel = document.getElementById("panel-files-current-path");
+  pathLabel.textContent = path;
+  editor.disabled = true;
+  editor.value = "loading…";
+  try {
+    const resp = await fetch(`/api/files?op=read&${filesQueryBase()}&path=${encodeURIComponent(path)}`, { cache: "no-store" });
+    editor.value = resp.ok ? await resp.text() : "";
+    editor.disabled = false;
+    document.getElementById("panel-file-save-btn").disabled = false;
+    document.getElementById("panel-file-delete-btn").disabled = false;
+  } catch (err) {
+    editor.value = "Error: " + (err.message || String(err));
+  }
+}
+
+async function writePanelFile(path, content) {
+  await fetch(`/api/files?${filesQueryBase()}&path=${encodeURIComponent(path)}`, {
+    method: "PUT",
+    body: content,
+  });
+}
+
+async function savePanelFile() {
+  if (!panelCurrentFile) return;
+  const editor = document.getElementById("panel-files-editor");
+  try {
+    await writePanelFile(panelCurrentFile, editor.value);
+    showToast(`Saved ${panelCurrentFile}`);
+  } catch (err) {
+    showToast("Error saving file: " + (err.message || String(err)), true);
+  }
+}
+
+async function deletePanelFile() {
+  if (!panelCurrentFile) return;
+  if (!confirm(`Delete ${panelCurrentFile}?`)) return;
+  try {
+    await fetch(`/api/files?${filesQueryBase()}&path=${encodeURIComponent(panelCurrentFile)}`, { method: "DELETE" });
+    panelCurrentFile = null;
+    document.getElementById("panel-files-editor").value = "";
+    document.getElementById("panel-files-editor").disabled = true;
+    document.getElementById("panel-files-current-path").textContent = "Select a file";
+    document.getElementById("panel-file-save-btn").disabled = true;
+    document.getElementById("panel-file-delete-btn").disabled = true;
+    await refreshPanelFiles();
+  } catch (err) {
+    showToast("Error deleting file: " + (err.message || String(err)), true);
+  }
+}
+
 function initDeploymentPanel() {
   document.getElementById("close-panel-btn").addEventListener("click", closeDeploymentPanel);
   document.getElementById("panel-backdrop").addEventListener("click", closeDeploymentPanel);
   document.getElementById("panel-add-env-var-btn").addEventListener("click", () => addPanelEnvVarRow());
+  document.getElementById("panel-file-save-btn").addEventListener("click", savePanelFile);
+  document.getElementById("panel-file-delete-btn").addEventListener("click", deletePanelFile);
+  document.getElementById("panel-new-file-btn").addEventListener("click", async () => {
+    const name = prompt("New file name (e.g. about.html):");
+    if (!name) return;
+    await writePanelFile(name, "");
+    await refreshPanelFiles();
+    openPanelFile(name);
+  });
+  document.getElementById("panel-upload-file-btn").addEventListener("click", () => {
+    document.getElementById("panel-upload-file-input").click();
+  });
+  document.getElementById("panel-upload-file-input").addEventListener("change", async (ev) => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const content = await file.text();
+    await writePanelFile(file.name, content);
+    ev.target.value = "";
+    await refreshPanelFiles();
+    openPanelFile(file.name);
+  });
   document.getElementById("panel-link-service-btn").addEventListener("click", () => {
     const name = document.getElementById("panel-link-service-select").value;
     if (!name) return;
@@ -708,6 +827,7 @@ async function openDeploymentModal() {
   errorEl.textContent = "";
   form.reset();
   document.getElementById("env-vars-rows").innerHTML = "";
+  document.getElementById("mount-path-field").classList.add("hidden");
   setDeploymentSource("image");
   form.elements["name"].disabled = false;
   form.elements["namespace"].value = currentNamespace;
@@ -733,6 +853,9 @@ function initDeploymentForm() {
   });
   document.querySelectorAll("#new-deployment-modal .tab-toggle").forEach((btn) => {
     btn.addEventListener("click", () => setDeploymentSource(btn.dataset.source));
+  });
+  document.getElementById("persistent-storage-checkbox").addEventListener("change", (ev) => {
+    document.getElementById("mount-path-field").classList.toggle("hidden", !ev.target.checked);
   });
   document.getElementById("link-service-btn").addEventListener("click", () => {
     const name = document.getElementById("link-service-select").value;
@@ -773,6 +896,18 @@ function initDeploymentForm() {
       if (!payload.image) {
         errorEl.textContent = "Image is required";
         return;
+      }
+      if (fd.get("addPersistentStorage")) {
+        payload.addPersistentStorage = true;
+        payload.mountPath = String(fd.get("mountPath") || "").trim();
+        if (!payload.mountPath) {
+          errorEl.textContent = "Mount path is required when persistent storage is enabled";
+          return;
+        }
+        if (payload.replicas > 1) {
+          errorEl.textContent = "Deployments with persistent storage must have replicas = 1";
+          return;
+        }
       }
     }
 
@@ -1194,6 +1329,16 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21v-8m0 0V8.5C9 5.5 10.5 3 13.5 3M9 13H6m3 0h3M6 17h4"/></svg>',
   bucket:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1.8 11a2 2 0 01-2 1.7H8.8a2 2 0 01-2-1.7L5 8z"/><path d="M3 8c0-1.5 4-2.5 9-2.5s9 1 9 2.5"/></svg>',
+  overview:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
+  variables:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4c-2 0-3 1-3 3v3c0 1-.5 2-2 2 1.5 0 2 1 2 2v3c0 2 1 3 3 3M16 4c2 0 3 1 3 3v3c0 1 .5 2 2 2-1.5 0-2 1-2 2v3c0 2-1 3-3 3"/></svg>',
+  logs:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>',
+  settings:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.04 1.56V21a2 2 0 11-4 0v-.09A1.7 1.7 0 008.6 19.4a1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.56-1.04H3a2 2 0 110-4h.09A1.7 1.7 0 004.6 8.6a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06A1.7 1.7 0 008.6 4.6a1.7 1.7 0 001.04-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.04 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V8.6a1.7 1.7 0 001.56 1.04H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.56 1.04z"/></svg>',
+  files:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V6z"/></svg>',
 };
 
 function iconForImage(image) {
@@ -1241,6 +1386,11 @@ function applyPresetToModal(preset) {
   if (preset.command) form.elements["command"].value = formatCommandForInput(preset.command);
   document.getElementById("env-vars-rows").innerHTML = "";
   for (const [k, v] of Object.entries(preset.env || {})) addEnvVarRow(k, v);
+
+  const isNginx = (preset.image || "").toLowerCase().startsWith("nginx");
+  form.elements["addPersistentStorage"].checked = isNginx;
+  form.elements["mountPath"].value = isNginx ? "/usr/share/nginx/html" : "";
+  document.getElementById("mount-path-field").classList.toggle("hidden", !isNginx);
 }
 
 function openPresetModal(kind) {

@@ -39,6 +39,7 @@ type processRuntime struct {
 	logDir       string
 	buildDir     string
 	buildkitAddr string
+	volumesDir   string
 }
 
 func newProcessRuntime() *processRuntime {
@@ -210,6 +211,22 @@ func ensureTagOrDigest(ref string) string {
 	return ref + ":latest"
 }
 
+// ensureVolumeDir lazily creates and returns the absolute path of the
+// node-local directory backing a persistent volume. This is where the
+// volume's data actually lives — the apiserver-side Volume object is just
+// metadata plus, once claimed, a record of which node this directory is on.
+func (r *processRuntime) ensureVolumeDir(namespace, volumeName string) (string, error) {
+	dir := filepath.Join(r.volumesDir, namespace, volumeName)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("agent: create volume dir %s: %w", dir, err)
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("agent: resolve volume dir %s: %w", dir, err)
+	}
+	return abs, nil
+}
+
 func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 	key := podKey(pod)
 	c := firstContainer(pod)
@@ -266,6 +283,19 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 	sort.Strings(envKeys)
 	for _, k := range envKeys {
 		args = append(args, "--env", k+"="+c.GetEnv()[k])
+	}
+	if r.volumesDir != "" {
+		for _, m := range pod.GetSpec().GetVolumes() {
+			volDir, err := r.ensureVolumeDir(pod.GetMetadata().GetNamespace(), m.GetVolumeName())
+			if err != nil {
+				return err
+			}
+			mode := "rw"
+			if m.GetReadOnly() {
+				mode = "ro"
+			}
+			args = append(args, "--mount", fmt.Sprintf("type=bind,src=%s,dst=%s,options=rbind:%s", volDir, m.GetMountPath(), mode))
+		}
 	}
 	args = append(args, image, id)
 	args = append(args, c.GetCommand()...)

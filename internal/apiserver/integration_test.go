@@ -45,9 +45,10 @@ func TestDeploymentCreateReconcilesToPods(t *testing.T) {
 	deployments := registry.New(st, "deployments", func() *v1.Deployment { return &v1.Deployment{} })
 	pods := registry.New(st, "pods", func() *v1.Pod { return &v1.Pod{} })
 	nodes := registry.New(st, "nodes", func() *v1.Node { return &v1.Node{} })
+	volumes := registry.New(st, "volumes", func() *v1.Volume { return &v1.Volume{} })
 
 	mgr := controller.NewManager()
-	mgr.Register(controller.NewDeploymentReconciler(deployments, pods, nodes, scheduler.New(), 30*time.Millisecond))
+	mgr.Register(controller.NewDeploymentReconciler(deployments, pods, nodes, volumes, scheduler.New(), 30*time.Millisecond))
 	go mgr.Run(t.Context())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -8,6 +8,8 @@ import (
 	"maps"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
 	"github.com/gh0st-nemesis/nimbuscore/internal/scheduler"
@@ -20,6 +22,7 @@ type DeploymentReconciler struct {
 	deployments *registry.Registry[*v1.Deployment]
 	pods        *registry.Registry[*v1.Pod]
 	nodes       *registry.Registry[*v1.Node]
+	volumes     *registry.Registry[*v1.Volume]
 	scheduler   scheduler.Scheduler
 	resync      time.Duration
 }
@@ -28,13 +31,14 @@ func NewDeploymentReconciler(
 	deployments *registry.Registry[*v1.Deployment],
 	pods *registry.Registry[*v1.Pod],
 	nodes *registry.Registry[*v1.Node],
+	volumes *registry.Registry[*v1.Volume],
 	sched scheduler.Scheduler,
 	resync time.Duration,
 ) *DeploymentReconciler {
 	if resync <= 0 {
 		resync = 5 * time.Second
 	}
-	return &DeploymentReconciler{deployments: deployments, pods: pods, nodes: nodes, scheduler: sched, resync: resync}
+	return &DeploymentReconciler{deployments: deployments, pods: pods, nodes: nodes, volumes: volumes, scheduler: sched, resync: resync}
 }
 
 func (r *DeploymentReconciler) Name() string { return "deployment-controller" }
@@ -72,13 +76,31 @@ func (r *DeploymentReconciler) reconcileOne(ctx context.Context, d *v1.Deploymen
 		return fmt.Errorf("list owned pods: %w", err)
 	}
 
+	mounts := d.GetSpec().GetTemplate().GetVolumes()
+
 	want := int(d.GetSpec().GetReplicas())
+	if len(mounts) > 0 && want > 1 {
+		log.Printf("deployment-controller: %s/%s: clamping replicas %d to 1, volume-backed deployments cannot scale beyond a single replica",
+			d.GetMetadata().GetNamespace(), d.GetMetadata().GetName(), want)
+		want = 1
+	}
 	have := len(owned)
 
 	switch {
 	case have < want:
+		claimedNode := ""
+		if len(mounts) > 0 {
+			node, err := r.resolveVolumeNode(ctx, d.GetMetadata().GetNamespace(), mounts)
+			if err != nil {
+				return fmt.Errorf("resolve volume node: %w", err)
+			}
+			claimedNode = node
+		}
 		for i := have; i < want; i++ {
 			pod := r.newPod(d, i)
+			if claimedNode != "" {
+				pod.Spec.NodeName = claimedNode
+			}
 			if err := r.pods.Put(ctx, pod.GetMetadata().GetNamespace(), pod.GetMetadata().GetName(), pod); err != nil {
 				return fmt.Errorf("create pod: %w", err)
 			}
@@ -101,6 +123,12 @@ func (r *DeploymentReconciler) reconcileOne(ctx context.Context, d *v1.Deploymen
 
 	if err := r.scheduleUnassigned(ctx, owned); err != nil {
 		log.Printf("deployment-controller: %s/%s: schedule: %v", d.GetMetadata().GetNamespace(), d.GetMetadata().GetName(), err)
+	}
+
+	if len(mounts) > 0 {
+		if err := r.claimVolumeNodes(ctx, d, owned); err != nil {
+			log.Printf("deployment-controller: %s/%s: claim volume node: %v", d.GetMetadata().GetNamespace(), d.GetMetadata().GetName(), err)
+		}
 	}
 
 	var ready int32
@@ -257,6 +285,75 @@ func (r *DeploymentReconciler) scheduleUnassigned(ctx context.Context, pods []*v
 	return nil
 }
 
+// resolveVolumeNode returns the node a set of VolumeMounts is already pinned
+// to, if any of the referenced Volumes has already been claimed by a node.
+// Hostpath volumes are node-local, so once claimed every pod using them must
+// land on that same node.
+func (r *DeploymentReconciler) resolveVolumeNode(ctx context.Context, namespace string, mounts []*v1.VolumeMount) (string, error) {
+	for _, m := range mounts {
+		vol, err := r.volumes.Get(ctx, namespace, m.GetVolumeName())
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			return "", err
+		}
+		if nodeName := vol.GetStatus().GetNodeName(); nodeName != "" {
+			return nodeName, nil
+		}
+	}
+	return "", nil
+}
+
+// claimVolumeNodes stamps the node a Deployment's volumes were scheduled onto
+// back onto the Volume objects themselves (first pod to use a volume claims
+// it for that node, permanently), and records ownership so a volume can't be
+// silently shared between two different Deployments.
+func (r *DeploymentReconciler) claimVolumeNodes(ctx context.Context, d *v1.Deployment, owned []*v1.Pod) error {
+	mounts := d.GetSpec().GetTemplate().GetVolumes()
+	if len(mounts) == 0 {
+		return nil
+	}
+	namespace := d.GetMetadata().GetNamespace()
+
+	var nodeName string
+	for _, p := range owned {
+		if n := p.GetSpec().GetNodeName(); n != "" {
+			nodeName = n
+			break
+		}
+	}
+	if nodeName == "" {
+		return nil
+	}
+
+	for _, m := range mounts {
+		vol, err := r.volumes.Get(ctx, namespace, m.GetVolumeName())
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			return err
+		}
+		if vol.GetStatus().GetNodeName() != "" {
+			continue
+		}
+		if vol.Status == nil {
+			vol.Status = &v1.VolumeStatus{}
+		}
+		vol.Status.NodeName = nodeName
+		if vol.Metadata.Labels == nil {
+			vol.Metadata.Labels = make(map[string]string, 1)
+		}
+		vol.Metadata.Labels[OwnerDeploymentLabel] = d.GetMetadata().GetName()
+		if err := r.volumes.Put(ctx, namespace, vol.GetMetadata().GetName(), vol); err != nil {
+			return err
+		}
+		log.Printf("deployment-controller: %s/%s: claimed volume %s onto node %s", namespace, d.GetMetadata().GetName(), m.GetVolumeName(), nodeName)
+	}
+	return nil
+}
+
 func (r *DeploymentReconciler) newPod(d *v1.Deployment, index int) *v1.Pod {
 	labels := make(map[string]string, len(d.GetSpec().GetSelector())+1)
 	maps.Copy(labels, d.GetSpec().GetSelector())
@@ -268,7 +365,10 @@ func (r *DeploymentReconciler) newPod(d *v1.Deployment, index int) *v1.Pod {
 			Namespace: d.GetMetadata().GetNamespace(),
 			Labels:    labels,
 		},
-		Spec: d.GetSpec().GetTemplate(),
+		// Cloned so each pod owns its Spec independently — callers (e.g. volume
+		// node-pinning) set fields like NodeName per-pod before Put, and every
+		// replica would otherwise share the exact same template pointer.
+		Spec: proto.Clone(d.GetSpec().GetTemplate()).(*v1.PodSpec),
 		Status: &v1.PodStatus{
 			Phase: v1.PodPhase_POD_PHASE_PENDING,
 		},
