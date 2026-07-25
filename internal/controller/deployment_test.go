@@ -454,3 +454,90 @@ func TestVolumeBackedPodPinnedToClaimedNode(t *testing.T) {
 		t.Errorf("replacement pod landed on %q, want the already-claimed node %q", after[0].GetSpec().GetNodeName(), claimedNode)
 	}
 }
+
+func TestReconcileOneRecordsPendingReasonOnPortConflict(t *testing.T) {
+	ctx := context.Background()
+	r, deployments, pods, nodes := newTestReconciler()
+	seedReadyNode(t, ctx, nodes, "node-1")
+
+	first := &v1.Deployment{
+		Metadata: &v1.ObjectMeta{Name: "web-1", Namespace: "default"},
+		Spec: &v1.DeploymentSpec{
+			Replicas: 1,
+			Selector: map[string]string{"app": "web-1"},
+			Template: &v1.PodSpec{Containers: []*v1.Container{{Name: "web-1", Image: "nginx", ContainerPorts: []int32{80}}}},
+		},
+	}
+	second := &v1.Deployment{
+		Metadata: &v1.ObjectMeta{Name: "web-2", Namespace: "default"},
+		Spec: &v1.DeploymentSpec{
+			Replicas: 1,
+			Selector: map[string]string{"app": "web-2"},
+			Template: &v1.PodSpec{Containers: []*v1.Container{{Name: "web-2", Image: "nginx", ContainerPorts: []int32{80}}}},
+		},
+	}
+	if err := deployments.Put(ctx, "default", "web-1", first); err != nil {
+		t.Fatalf("seed first deployment: %v", err)
+	}
+	if err := deployments.Put(ctx, "default", "web-2", second); err != nil {
+		t.Fatalf("seed second deployment: %v", err)
+	}
+
+	if err := r.reconcileOne(ctx, first); err != nil {
+		t.Fatalf("reconcileOne(first): %v", err)
+	}
+	if err := r.reconcileOne(ctx, second); err != nil {
+		t.Fatalf("reconcileOne(second): %v", err)
+	}
+
+	firstPods, err := pods.List(ctx, "default")
+	if err != nil {
+		t.Fatalf("list pods: %v", err)
+	}
+	var p1, p2 *v1.Pod
+	for _, p := range firstPods {
+		switch p.GetMetadata().GetLabels()[OwnerDeploymentLabel] {
+		case "web-1":
+			p1 = p
+		case "web-2":
+			p2 = p
+		}
+	}
+	if p1 == nil || p1.GetSpec().GetNodeName() != "node-1" {
+		t.Fatalf("web-1's pod should have scheduled onto node-1, got %+v", p1)
+	}
+	if p2 == nil {
+		t.Fatal("web-2's pod not found")
+	}
+	if p2.GetSpec().GetNodeName() != "" {
+		t.Errorf("web-2's pod should be unscheduled (port 80 conflict), got node %q", p2.GetSpec().GetNodeName())
+	}
+	if p2.GetStatus().GetMessage() == "" {
+		t.Error("web-2's pod should have a non-empty pending reason message")
+	}
+
+	// Free up the port (delete web-1's pod so port 80 is available again) and
+	// confirm web-2 schedules and its pending message clears.
+	if err := pods.Delete(ctx, "default", p1.GetMetadata().GetName()); err != nil {
+		t.Fatalf("delete web-1 pod: %v", err)
+	}
+	if err := r.reconcileOne(ctx, second); err != nil {
+		t.Fatalf("reconcileOne(second, after port freed): %v", err)
+	}
+	afterPods, err := pods.List(ctx, "default")
+	if err != nil {
+		t.Fatalf("list pods (after): %v", err)
+	}
+	var p2After *v1.Pod
+	for _, p := range afterPods {
+		if p.GetMetadata().GetLabels()[OwnerDeploymentLabel] == "web-2" {
+			p2After = p
+		}
+	}
+	if p2After == nil || p2After.GetSpec().GetNodeName() != "node-1" {
+		t.Fatalf("web-2's pod should now be scheduled onto node-1, got %+v", p2After)
+	}
+	if p2After.GetStatus().GetMessage() != "" {
+		t.Errorf("pending message should be cleared once scheduled, got %q", p2After.GetStatus().GetMessage())
+	}
+}

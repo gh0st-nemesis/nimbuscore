@@ -69,6 +69,20 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 92% 18%, rgba(var(--accent-rgb), 0.16) 0%, rgba(var(--accent-rgb), 0.16) 22%, transparent 65%),
+    radial-gradient(circle at 6% 78%, rgba(59, 130, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 18%, transparent 62%),
+    radial-gradient(circle at 50% 45%, rgba(var(--accent-rgb), 0.06) 0%, rgba(var(--accent-rgb), 0.06) 12%, transparent 55%);
+  filter: blur(60px);
 }
 
 header {
@@ -496,6 +510,25 @@ footer {
   padding: 0.3rem 0.7rem;
   font-size: 0.78rem;
   border-radius: var(--radius-sm);
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem;
+  width: 1.9rem;
+  height: 1.9rem;
+}
+
+.icon-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .toast {

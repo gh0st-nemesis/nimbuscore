@@ -15,6 +15,7 @@ type NodeCandidate struct {
 	MemUsed             int64
 	AcceleratorCapacity map[string]int64
 	AcceleratorUsed     map[string]int64
+	UsedPorts           map[int32]bool
 }
 
 type PodRequest struct {
@@ -22,6 +23,7 @@ type PodRequest struct {
 	CPURequest            int64
 	MemRequest            int64
 	AcceleratorsRequested map[string]int64
+	ContainerPorts        []int32
 }
 
 type Scheduler interface {
@@ -48,6 +50,9 @@ func (b *basic) Schedule(_ context.Context, pod PodRequest, nodes []NodeCandidat
 		if !acceleratorsFit(pod.AcceleratorsRequested, n.AcceleratorCapacity, n.AcceleratorUsed) {
 			continue
 		}
+		if !portsFit(pod.ContainerPorts, n.UsedPorts) {
+			continue
+		}
 		score := freeCPU + freeMem
 		if score > bestScore {
 			bestScore = score
@@ -68,6 +73,15 @@ func acceleratorsFit(requested, capacity, used map[string]int64) bool {
 		}
 		free := capacity[name] - used[name]
 		if free < want {
+			return false
+		}
+	}
+	return true
+}
+
+func portsFit(requested []int32, used map[int32]bool) bool {
+	for _, port := range requested {
+		if used[port] {
 			return false
 		}
 	}

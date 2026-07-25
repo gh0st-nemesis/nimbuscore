@@ -205,6 +205,7 @@ type nodeResourceUsage struct {
 	cpuMillis    int64
 	memoryBytes  int64
 	accelerators map[string]int64
+	ports        map[int32]bool
 }
 
 func (r *DeploymentReconciler) nodeUsage(ctx context.Context) (map[string]nodeResourceUsage, error) {
@@ -227,11 +228,17 @@ func computeNodeUsage(ctx context.Context, pods *registry.Registry[*v1.Pod]) (ma
 		if u.accelerators == nil {
 			u.accelerators = make(map[string]int64)
 		}
+		if u.ports == nil {
+			u.ports = make(map[int32]bool)
+		}
 		for _, c := range p.GetSpec().GetContainers() {
 			u.cpuMillis += c.GetResources().GetRequests().GetCpuMillis()
 			u.memoryBytes += c.GetResources().GetRequests().GetMemoryBytes()
 			for name, count := range c.GetResources().GetRequests().GetAccelerators() {
 				u.accelerators[name] += count
+			}
+			for _, port := range c.GetContainerPorts() {
+				u.ports[port] = true
 			}
 		}
 		usage[nodeName] = u
@@ -261,26 +268,9 @@ func (r *DeploymentReconciler) scheduleUnassigned(ctx context.Context, pods []*v
 	}
 
 	for _, p := range unassigned {
-		cpuReq, memReq, accelReq := podResourceRequest(p)
-
-		nodeName, err := r.scheduler.Schedule(ctx, scheduler.PodRequest{
-			Name:                  p.GetMetadata().GetName(),
-			CPURequest:            cpuReq,
-			MemRequest:            memReq,
-			AcceleratorsRequested: accelReq,
-		}, candidates)
-		if err != nil {
-			continue
+		if err := schedulePod(ctx, r.pods, r.scheduler, candidates, p); err != nil {
+			return err
 		}
-
-		if p.Spec == nil {
-			p.Spec = &v1.PodSpec{}
-		}
-		p.Spec.NodeName = nodeName
-		if err := r.pods.Put(ctx, p.GetMetadata().GetNamespace(), p.GetMetadata().GetName(), p); err != nil {
-			return fmt.Errorf("assign pod %s to node %s: %w", p.GetMetadata().GetName(), nodeName, err)
-		}
-		log.Printf("deployment-controller: scheduled %s/%s onto %s", p.GetMetadata().GetNamespace(), p.GetMetadata().GetName(), nodeName)
 	}
 	return nil
 }

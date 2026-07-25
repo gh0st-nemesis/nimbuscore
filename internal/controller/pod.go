@@ -77,26 +77,8 @@ func (r *PodReconciler) reconcileAll(ctx context.Context) {
 	}
 
 	for _, p := range unassigned {
-		cpuReq, memReq, accelReq := podResourceRequest(p)
-
-		nodeName, err := r.scheduler.Schedule(ctx, scheduler.PodRequest{
-			Name:                  p.GetMetadata().GetName(),
-			CPURequest:            cpuReq,
-			MemRequest:            memReq,
-			AcceleratorsRequested: accelReq,
-		}, candidates)
-		if err != nil {
-			continue
+		if err := schedulePod(ctx, r.pods, r.scheduler, candidates, p); err != nil {
+			log.Printf("pod-controller: %v", err)
 		}
-
-		if p.Spec == nil {
-			p.Spec = &v1.PodSpec{}
-		}
-		p.Spec.NodeName = nodeName
-		if err := r.pods.Put(ctx, p.GetMetadata().GetNamespace(), p.GetMetadata().GetName(), p); err != nil {
-			log.Printf("pod-controller: assign pod %s to node %s: %v", p.GetMetadata().GetName(), nodeName, err)
-			continue
-		}
-		log.Printf("pod-controller: scheduled %s/%s onto %s", p.GetMetadata().GetNamespace(), p.GetMetadata().GetName(), nodeName)
 	}
 }

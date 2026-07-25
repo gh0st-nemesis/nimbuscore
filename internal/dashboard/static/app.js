@@ -108,7 +108,9 @@ async function fetchJSON(path, options) {
     const text = await resp.text().catch(() => "");
     throw new Error(text || (path + ": " + resp.status));
   }
-  return resp.json();
+  if (resp.status === 204) return null;
+  const text = await resp.text();
+  return text ? JSON.parse(text) : null;
 }
 
 function initTabs() {
@@ -292,7 +294,9 @@ async function refreshPods() {
     tr.appendChild(el("td", null, name));
     const phaseTd = document.createElement("td");
     const phase = status.phase || "POD_PHASE_UNSPECIFIED";
-    phaseTd.appendChild(badge(phase.replace("POD_PHASE_", "").toLowerCase(), phaseKind(phase)));
+    const phaseBadge = badge(phase.replace("POD_PHASE_", "").toLowerCase(), phaseKind(phase));
+    if (status.message) phaseBadge.title = status.message;
+    phaseTd.appendChild(phaseBadge);
     tr.appendChild(phaseTd);
     tr.appendChild(el("td", null, spec.nodeName || "—"));
     tr.appendChild(el("td", null, String(status.restartCount || 0)));
@@ -1329,11 +1333,20 @@ async function refreshNamespaces() {
     opt.selected = name === currentNamespace;
     select.appendChild(opt);
   }
+  updateDeleteProjectButtonState();
+}
+
+function updateDeleteProjectButtonState() {
+  const btn = document.getElementById("delete-project-btn");
+  if (!btn) return;
+  btn.disabled = currentNamespace === "default";
+  btn.title = currentNamespace === "default" ? "The default project can't be deleted" : "Delete project";
 }
 
 async function switchProject(name) {
   currentNamespace = name;
   localStorage.setItem("nimbus-current-namespace", name);
+  updateDeleteProjectButtonState();
   await Promise.allSettled([refreshCanvas(), refreshDeployments(), refreshCICD()]);
 }
 
@@ -1347,6 +1360,30 @@ function initProjectSwitcher() {
   });
   document.getElementById("cancel-project-btn").addEventListener("click", () => {
     document.getElementById("new-project-modal").classList.remove("open");
+  });
+  document.getElementById("delete-project-btn").addEventListener("click", async () => {
+    const name = currentNamespace;
+    if (name === "default") return;
+    try {
+      const depData = await fetchJSON("/api/deployments");
+      const owned = (depData.items || []).filter((d) => (d.metadata?.namespace || "default") === name);
+      const count = owned.length;
+      const warning = count > 0 ? ` and its ${count} deployment(s)` : "";
+      if (!confirm(`Delete project "${name}"${warning}? This cannot be undone.`)) return;
+
+      for (const d of owned) {
+        await fetchJSON(`/api/deployments?namespace=${encodeURIComponent(name)}&name=${encodeURIComponent(d.metadata.name)}`, {
+          method: "DELETE",
+        });
+      }
+      await fetchJSON(`/api/namespaces?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+
+      await refreshNamespaces();
+      await switchProject("default");
+      showToast(`Project "${name}" deleted.`);
+    } catch (err) {
+      showToast(`Could not delete project "${name}": ${err.message || err}`, true);
+    }
   });
   document.getElementById("new-project-modal").addEventListener("click", (ev) => {
     if (ev.target.id === "new-project-modal") ev.target.classList.remove("open");
@@ -1428,6 +1465,8 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.04 1.56V21a2 2 0 11-4 0v-.09A1.7 1.7 0 008.6 19.4a1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.56-1.04H3a2 2 0 110-4h.09A1.7 1.7 0 004.6 8.6a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06A1.7 1.7 0 008.6 4.6a1.7 1.7 0 001.04-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.04 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V8.6a1.7 1.7 0 001.56 1.04H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.56 1.04z"/></svg>',
   files:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V6z"/></svg>',
+  trash:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0v12a2 2 0 002 2h6a2 2 0 002-2V7"/></svg>',
 };
 
 function iconForImage(image) {
