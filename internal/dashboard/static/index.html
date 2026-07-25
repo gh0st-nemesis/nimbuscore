@@ -84,31 +84,31 @@
           <button type="button" id="create-menu-btn" class="btn-primary">+ Create</button>
           <div id="create-menu" class="create-menu hidden">
             <button type="button" class="create-menu-item" data-create="image">
-              <span class="create-menu-icon">📦</span>
+              <span class="create-menu-icon" data-icon="docker"></span>
               <span><span class="create-menu-title">Docker Image</span><span class="create-menu-desc">Deploy from an image reference</span></span>
             </button>
             <button type="button" class="create-menu-item" data-create="git">
-              <span class="create-menu-icon">🐙</span>
+              <span class="create-menu-icon" data-icon="github"></span>
               <span><span class="create-menu-title">GitHub Repo</span><span class="create-menu-desc">Build from a Dockerfile in a repo</span></span>
             </button>
             <button type="button" class="create-menu-item" data-create="database">
-              <span class="create-menu-icon">🗄️</span>
+              <span class="create-menu-icon" data-icon="database"></span>
               <span><span class="create-menu-title">Database</span><span class="create-menu-desc">One-click Postgres, Redis, MySQL, MongoDB</span></span>
             </button>
             <button type="button" class="create-menu-item" data-create="template">
-              <span class="create-menu-icon">🧩</span>
+              <span class="create-menu-icon" data-icon="template"></span>
               <span><span class="create-menu-title">Template</span><span class="create-menu-desc">Start from a common preset</span></span>
             </button>
             <button type="button" class="create-menu-item" data-create="empty">
-              <span class="create-menu-icon">⬚</span>
+              <span class="create-menu-icon" data-icon="empty"></span>
               <span><span class="create-menu-title">Empty Service</span><span class="create-menu-desc">Blank deployment, configure after</span></span>
             </button>
             <button type="button" class="create-menu-item disabled" disabled title="Not available — no serverless runtime in NimbusCore">
-              <span class="create-menu-icon">λ</span>
+              <span class="create-menu-icon" data-icon="function"></span>
               <span><span class="create-menu-title">Function</span><span class="create-menu-desc">Coming soon</span></span>
             </button>
             <button type="button" class="create-menu-item disabled" disabled title="Not available — no object storage runtime in NimbusCore">
-              <span class="create-menu-icon">🪣</span>
+              <span class="create-menu-icon" data-icon="bucket"></span>
               <span><span class="create-menu-title">Bucket</span><span class="create-menu-desc">Coming soon</span></span>
             </button>
           </div>
@@ -171,7 +171,14 @@
 
       <label>Replicas <input name="replicas" type="number" min="1" value="1"></label>
       <label>Container port (also exposes a NodePort service) <input name="port" type="number" min="0" placeholder="80"></label>
-      <label>Command (optional, space-separated) <input name="command" placeholder="sleep 3600"></label>
+      <label>Command (optional, space-separated; quote args containing spaces) <input name="command" placeholder="sleep 3600"></label>
+      <div class="link-service-field">
+        <span class="env-vars-label">Link a service</span>
+        <div class="link-service-row">
+          <select id="link-service-select"><option value="">Select a service in this project…</option></select>
+          <button type="button" id="link-service-btn" class="btn-ghost btn-small">Link</button>
+        </div>
+      </div>
       <div class="env-vars-field">
         <span class="env-vars-label">Environment variables</span>
         <div id="env-vars-rows"></div>
@@ -252,6 +259,13 @@
 
     <div id="panel-tab-variables" class="panel-tab-content">
       <form id="panel-form">
+        <div class="link-service-field">
+          <span class="env-vars-label">Link a service</span>
+          <div class="link-service-row">
+            <select id="panel-link-service-select"><option value="">Select a service in this project…</option></select>
+            <button type="button" id="panel-link-service-btn" class="btn-ghost btn-small">Link</button>
+          </div>
+        </div>
         <div class="env-vars-field">
           <span class="env-vars-label">Environment variables</span>
           <div id="panel-env-vars-rows"></div>
@@ -284,7 +298,7 @@
       </div>
       <label>Replicas <input form="panel-form" name="replicas" type="number" min="1" value="1"></label>
       <label>Container port <input form="panel-form" name="port" type="number" min="0" placeholder="80"></label>
-      <label>Command (space-separated) <input form="panel-form" name="command" placeholder="sleep 3600"></label>
+      <label>Command (space-separated; quote args containing spaces) <input form="panel-form" name="command" placeholder="sleep 3600"></label>
     </div>
   </div>
 
