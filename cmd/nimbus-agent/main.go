@@ -40,6 +40,8 @@ func main() {
 	otlpEndpoint := fs.String("otlp-endpoint", "127.0.0.1:4317", "OTLP gRPC collector endpoint (when -otel-exporter=otlp)")
 	logDir := fs.String("log-dir", "./data/logs", "directory where container stdout/stderr logs are written")
 	logAddr := fs.String("log-addr", ":10250", "HTTP listen address serving container logs to the control plane")
+	buildDir := fs.String("build-dir", "./data/builds", "directory used to clone and build container images from Git repos")
+	buildkitAddr := fs.String("buildkit-addr", "unix:///run/buildkit/buildkitd.sock", "buildkitd address used to build images from Git repos")
 	fs.Parse(os.Args[1:])
 
 	if *controlPlaneAddr == "" || *joinToken == "" {
@@ -130,7 +132,13 @@ func main() {
 		}
 	}()
 
-	a := agent.New(agent.Config{NodeName: *nodeName, InternalIP: internalIP, LogDir: *logDir}, v1.NewPodServiceClient(conn), v1.NewServiceServiceClient(conn))
+	a := agent.New(agent.Config{
+		NodeName:     *nodeName,
+		InternalIP:   internalIP,
+		LogDir:       *logDir,
+		BuildDir:     *buildDir,
+		BuildkitAddr: *buildkitAddr,
+	}, v1.NewPodServiceClient(conn), v1.NewServiceServiceClient(conn))
 	if err := a.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("agent: %v", err)
 	}

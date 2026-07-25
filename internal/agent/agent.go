@@ -10,10 +10,12 @@ import (
 )
 
 type Config struct {
-	NodeName   string
-	InternalIP string
-	Interval   time.Duration
-	LogDir     string
+	NodeName     string
+	InternalIP   string
+	Interval     time.Duration
+	LogDir       string
+	BuildDir     string
+	BuildkitAddr string
 }
 
 type Agent struct {
@@ -30,6 +32,8 @@ func New(cfg Config, pods v1.PodServiceClient, services v1.ServiceServiceClient)
 	}
 	runtime := newProcessRuntime()
 	runtime.logDir = cfg.LogDir
+	runtime.buildDir = cfg.BuildDir
+	runtime.buildkitAddr = cfg.BuildkitAddr
 	return &Agent{cfg: cfg, pods: pods, services: services, runtime: runtime, nodePorts: newNodePortManager()}
 }
 

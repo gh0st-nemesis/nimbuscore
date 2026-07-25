@@ -33,10 +33,12 @@ type trackedProcess struct {
 }
 
 type processRuntime struct {
-	mu     sync.Mutex
-	procs  map[string]*trackedProcess
-	exited chan exitEvent
-	logDir string
+	mu           sync.Mutex
+	procs        map[string]*trackedProcess
+	exited       chan exitEvent
+	logDir       string
+	buildDir     string
+	buildkitAddr string
 }
 
 func newProcessRuntime() *processRuntime {
@@ -144,7 +146,7 @@ func (r *processRuntime) start(pod *v1.Pod) error {
 	switch {
 	case c.GetWasmModulePath() != "":
 		return r.startWASM(pod, c.GetWasmModulePath())
-	case c.GetImage() != "":
+	case c.GetImage() != "" || c.GetBuildSource() != nil:
 		return r.startContainerd(pod)
 	default:
 		return r.startProcess(pod)
@@ -212,12 +214,29 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 	key := podKey(pod)
 	c := firstContainer(pod)
 	id := containerName(pod)
-	image := resolveImageRef(c.GetImage())
 
 	removeContainerdContainer(id)
 
-	if out, err := exec.Command("ctr", "images", "pull", image).CombinedOutput(); err != nil {
-		return fmt.Errorf("agent: ctr images pull %s: %w: %s", image, err, strings.TrimSpace(string(out)))
+	var image string
+	if src := c.GetBuildSource(); src != nil {
+		buildDir := r.buildDir
+		if buildDir == "" {
+			buildDir = filepath.Join(os.TempDir(), "nimbus-builds")
+		}
+		buildkitAddr := r.buildkitAddr
+		if buildkitAddr == "" {
+			buildkitAddr = "unix:///run/buildkit/buildkitd.sock"
+		}
+		built, err := buildImageFromSource(context.Background(), buildkitAddr, filepath.Join(buildDir, id), r.logDir, id, src)
+		if err != nil {
+			return err
+		}
+		image = built
+	} else {
+		image = resolveImageRef(c.GetImage())
+		if out, err := exec.Command("ctr", "images", "pull", image).CombinedOutput(); err != nil {
+			return fmt.Errorf("agent: ctr images pull %s: %w: %s", image, err, strings.TrimSpace(string(out)))
+		}
 	}
 
 	args := []string{"run", "-d", "--net-host"}
@@ -283,7 +302,7 @@ func listContainerdTaskStatuses() (map[string]string, error) {
 
 func (r *processRuntime) adoptIfRunning(pod *v1.Pod) bool {
 	c := firstContainer(pod)
-	if c.GetImage() == "" {
+	if c.GetImage() == "" && c.GetBuildSource() == nil {
 		return false
 	}
 	id := containerName(pod)

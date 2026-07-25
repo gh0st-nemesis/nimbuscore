@@ -96,7 +96,23 @@
     <form id="new-deployment-form">
       <label>Name <input name="name" required placeholder="web"></label>
       <label>Namespace <input name="namespace" placeholder="default"></label>
-      <label>Image <input name="image" required placeholder="nginx:alpine"></label>
+
+      <div class="source-toggle">
+        <button type="button" class="tab-toggle active" data-source="image">Container image</button>
+        <button type="button" class="tab-toggle" data-source="git">Git repository</button>
+      </div>
+
+      <div id="source-image-fields" class="source-fields">
+        <label>Image <input name="image" placeholder="nginx:alpine"></label>
+      </div>
+
+      <div id="source-git-fields" class="source-fields hidden">
+        <label>Repository URL <input name="gitRepoUrl" placeholder="https://github.com/user/repo.git"></label>
+        <label>Branch <input name="gitBranch" placeholder="main"></label>
+        <label>Dockerfile path (optional, relative to repo root) <input name="gitDockerfilePath" placeholder="Dockerfile"></label>
+        <label>Build context path (optional, relative to repo root) <input name="gitContextPath" placeholder=""></label>
+      </div>
+
       <label>Replicas <input name="replicas" type="number" min="1" value="1"></label>
       <label>Container port (also exposes a NodePort service) <input name="port" type="number" min="0" placeholder="80"></label>
       <label>Command (optional, space-separated) <input name="command" placeholder="sleep 3600"></label>
@@ -118,6 +134,10 @@
   <div class="modal modal-wide">
     <div class="modal-head">
       <h3 id="logs-modal-title">Logs</h3>
+      <div class="source-toggle logs-stream-toggle">
+        <button type="button" class="tab-toggle active" data-stream="runtime">Runtime</button>
+        <button type="button" class="tab-toggle" data-stream="build">Build</button>
+      </div>
       <button type="button" id="close-logs-btn" class="btn-ghost btn-small">Close</button>
     </div>
     <pre id="logs-content" class="logs-content">loading…</pre>

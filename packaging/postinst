@@ -52,6 +52,7 @@ MSG
       fi
     fi
 
+    systemctl enable --now buildkitd >/dev/null 2>&1 || true
     systemctl enable nimbus-agent >/dev/null 2>&1 || true
     cat <<MSG
 nimbuscore installed — role: worker.
@@ -62,6 +63,9 @@ runs as root (like a real kubelet does) — starting containers via
 containerd's ctr client involves overlay mount operations that need
 root/CAP_SYS_ADMIN+CAP_DAC_OVERRIDE, which isn't meaningfully different
 from root in practice.
+
+buildkitd.service was enabled and started — it's used to build images
+from Git repos (deploy-from-source), needs no per-cluster config.
 
 Edit /etc/nimbuscore/agent.env (node name, control-plane address, join
 token), then:

@@ -15,6 +15,13 @@ message SecurityContext {
   bool run_as_non_root = 5;
 }
 
+message BuildSource {
+  string repo_url = 1;
+  string branch = 2;
+  string dockerfile_path = 3;
+  string context_path = 4;
+}
+
 message Container {
   string name = 1;
   string image = 2;
@@ -24,6 +31,7 @@ message Container {
   string wasm_module_path = 6;
   repeated int32 container_ports = 7;
   map<string, string> env = 8;
+  BuildSource build_source = 9;
 }
 
 enum RestartPolicy {

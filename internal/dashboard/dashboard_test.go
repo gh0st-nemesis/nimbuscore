@@ -232,6 +232,83 @@ func TestDashboardCreateDeploymentWithPortAutoCreatesService(t *testing.T) {
 	}
 }
 
+func TestDashboardCreateDeploymentFromGitRepo(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"web","gitRepoUrl":"https://example.com/user/repo.git","gitBranch":"dev","gitDockerfilePath":"docker/Dockerfile","gitContextPath":"app"}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	listResp, err := http.Get(srv.URL + "/api/deployments")
+	if err != nil {
+		t.Fatalf("GET /api/deployments: %v", err)
+	}
+	defer listResp.Body.Close()
+	var decoded struct {
+		Items []struct {
+			Spec struct {
+				Template struct {
+					Containers []struct {
+						Image       string `json:"image"`
+						BuildSource struct {
+							RepoUrl        string `json:"repoUrl"`
+							Branch         string `json:"branch"`
+							DockerfilePath string `json:"dockerfilePath"`
+							ContextPath    string `json:"contextPath"`
+						} `json:"buildSource"`
+					} `json:"containers"`
+				} `json:"template"`
+			} `json:"spec"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(decoded.Items) != 1 {
+		t.Fatalf("got %d deployments, want 1", len(decoded.Items))
+	}
+	c := decoded.Items[0].Spec.Template.Containers[0]
+	if c.Image != "" {
+		t.Errorf("image = %q, want empty for a Git-sourced deployment", c.Image)
+	}
+	if c.BuildSource.RepoUrl != "https://example.com/user/repo.git" {
+		t.Errorf("buildSource.repoUrl = %q", c.BuildSource.RepoUrl)
+	}
+	if c.BuildSource.Branch != "dev" {
+		t.Errorf("buildSource.branch = %q, want dev", c.BuildSource.Branch)
+	}
+	if c.BuildSource.DockerfilePath != "docker/Dockerfile" {
+		t.Errorf("buildSource.dockerfilePath = %q", c.BuildSource.DockerfilePath)
+	}
+	if c.BuildSource.ContextPath != "app" {
+		t.Errorf("buildSource.contextPath = %q", c.BuildSource.ContextPath)
+	}
+}
+
+func TestDashboardCreateDeploymentRequiresImageOrGitRepo(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"web"}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
 func TestDashboardCreateDeploymentWithEnvVars(t *testing.T) {
 	handler, _, _ := newTestHandler(t)
 	srv := httptest.NewServer(handler)

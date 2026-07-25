@@ -540,11 +540,53 @@ footer {
   max-width: 760px;
 }
 
+.hidden {
+  display: none !important;
+}
+
+.source-toggle {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.tab-toggle {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 0.5rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.tab-toggle.active {
+  color: var(--text);
+  border-color: var(--blue);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.source-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
 .modal-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
   margin-bottom: 1rem;
+}
+
+.logs-stream-toggle {
+  flex: 1;
+  max-width: 220px;
+}
+
+.logs-stream-toggle .tab-toggle {
+  padding: 0.35rem 0.5rem;
 }
 
 .modal-head h3 {

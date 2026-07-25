@@ -172,15 +172,19 @@ func (cfg Config) handleDeployments(w http.ResponseWriter, r *http.Request) {
 }
 
 type createDeploymentRequest struct {
-	Name        string            `json:"name"`
-	Namespace   string            `json:"namespace"`
-	Image       string            `json:"image"`
-	Replicas    int32             `json:"replicas"`
-	Port        int32             `json:"port"`
-	Command     []string          `json:"command"`
-	Env         map[string]string `json:"env"`
-	CPUMillis   int64             `json:"cpuMillis"`
-	MemoryBytes int64             `json:"memoryBytes"`
+	Name          string            `json:"name"`
+	Namespace     string            `json:"namespace"`
+	Image         string            `json:"image"`
+	GitRepoURL    string            `json:"gitRepoUrl"`
+	GitBranch     string            `json:"gitBranch"`
+	GitDockerfile string            `json:"gitDockerfilePath"`
+	GitContext    string            `json:"gitContextPath"`
+	Replicas      int32             `json:"replicas"`
+	Port          int32             `json:"port"`
+	Command       []string          `json:"command"`
+	Env           map[string]string `json:"env"`
+	CPUMillis     int64             `json:"cpuMillis"`
+	MemoryBytes   int64             `json:"memoryBytes"`
 }
 
 func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request) {
@@ -189,8 +193,12 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if req.Name == "" || req.Image == "" {
-		http.Error(w, "name and image are required", http.StatusBadRequest)
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if req.Image == "" && req.GitRepoURL == "" {
+		http.Error(w, "image or gitRepoUrl is required", http.StatusBadRequest)
 		return
 	}
 	if req.Namespace == "" {
@@ -214,6 +222,15 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 		Command:        req.Command,
 		ContainerPorts: ports,
 		Env:            req.Env,
+	}
+	if req.GitRepoURL != "" {
+		container.Image = ""
+		container.BuildSource = &v1.BuildSource{
+			RepoUrl:        req.GitRepoURL,
+			Branch:         req.GitBranch,
+			DockerfilePath: req.GitDockerfile,
+			ContextPath:    req.GitContext,
+		}
 	}
 	if req.CPUMillis > 0 || req.MemoryBytes > 0 {
 		container.Resources = &v1.ResourceRequirements{
@@ -510,6 +527,9 @@ func (cfg Config) handleCICD(w http.ResponseWriter, r *http.Request) {
 		image := ""
 		if containers := d.GetSpec().GetTemplate().GetContainers(); len(containers) > 0 {
 			image = containers[0].GetImage()
+			if build := containers[0].GetBuildSource(); build != nil {
+				image = "git: " + build.GetRepoUrl()
+			}
 		}
 		out.Deployments = append(out.Deployments, cicdDeployment{
 			Namespace:     d.GetMetadata().GetNamespace(),

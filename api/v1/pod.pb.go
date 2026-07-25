@@ -207,6 +207,74 @@ func (x *SecurityContext) GetRunAsNonRoot() bool {
 	return false
 }
 
+type BuildSource struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RepoUrl        string                 `protobuf:"bytes,1,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
+	Branch         string                 `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"`
+	DockerfilePath string                 `protobuf:"bytes,3,opt,name=dockerfile_path,json=dockerfilePath,proto3" json:"dockerfile_path,omitempty"`
+	ContextPath    string                 `protobuf:"bytes,4,opt,name=context_path,json=contextPath,proto3" json:"context_path,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BuildSource) Reset() {
+	*x = BuildSource{}
+	mi := &file_pod_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BuildSource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BuildSource) ProtoMessage() {}
+
+func (x *BuildSource) ProtoReflect() protoreflect.Message {
+	mi := &file_pod_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BuildSource.ProtoReflect.Descriptor instead.
+func (*BuildSource) Descriptor() ([]byte, []int) {
+	return file_pod_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *BuildSource) GetRepoUrl() string {
+	if x != nil {
+		return x.RepoUrl
+	}
+	return ""
+}
+
+func (x *BuildSource) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *BuildSource) GetDockerfilePath() string {
+	if x != nil {
+		return x.DockerfilePath
+	}
+	return ""
+}
+
+func (x *BuildSource) GetContextPath() string {
+	if x != nil {
+		return x.ContextPath
+	}
+	return ""
+}
+
 type Container struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -217,13 +285,14 @@ type Container struct {
 	WasmModulePath  string                 `protobuf:"bytes,6,opt,name=wasm_module_path,json=wasmModulePath,proto3" json:"wasm_module_path,omitempty"`
 	ContainerPorts  []int32                `protobuf:"varint,7,rep,packed,name=container_ports,json=containerPorts,proto3" json:"container_ports,omitempty"`
 	Env             map[string]string      `protobuf:"bytes,8,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	BuildSource     *BuildSource           `protobuf:"bytes,9,opt,name=build_source,json=buildSource,proto3" json:"build_source,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Container) Reset() {
 	*x = Container{}
-	mi := &file_pod_proto_msgTypes[1]
+	mi := &file_pod_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -235,7 +304,7 @@ func (x *Container) String() string {
 func (*Container) ProtoMessage() {}
 
 func (x *Container) ProtoReflect() protoreflect.Message {
-	mi := &file_pod_proto_msgTypes[1]
+	mi := &file_pod_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -248,7 +317,7 @@ func (x *Container) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Container.ProtoReflect.Descriptor instead.
 func (*Container) Descriptor() ([]byte, []int) {
-	return file_pod_proto_rawDescGZIP(), []int{1}
+	return file_pod_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Container) GetName() string {
@@ -307,6 +376,13 @@ func (x *Container) GetEnv() map[string]string {
 	return nil
 }
 
+func (x *Container) GetBuildSource() *BuildSource {
+	if x != nil {
+		return x.BuildSource
+	}
+	return nil
+}
+
 type PodSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Containers    []*Container           `protobuf:"bytes,1,rep,name=containers,proto3" json:"containers,omitempty"`
@@ -319,7 +395,7 @@ type PodSpec struct {
 
 func (x *PodSpec) Reset() {
 	*x = PodSpec{}
-	mi := &file_pod_proto_msgTypes[2]
+	mi := &file_pod_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -331,7 +407,7 @@ func (x *PodSpec) String() string {
 func (*PodSpec) ProtoMessage() {}
 
 func (x *PodSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_pod_proto_msgTypes[2]
+	mi := &file_pod_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -344,7 +420,7 @@ func (x *PodSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PodSpec.ProtoReflect.Descriptor instead.
 func (*PodSpec) Descriptor() ([]byte, []int) {
-	return file_pod_proto_rawDescGZIP(), []int{2}
+	return file_pod_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *PodSpec) GetContainers() []*Container {
@@ -388,7 +464,7 @@ type PodStatus struct {
 
 func (x *PodStatus) Reset() {
 	*x = PodStatus{}
-	mi := &file_pod_proto_msgTypes[3]
+	mi := &file_pod_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -400,7 +476,7 @@ func (x *PodStatus) String() string {
 func (*PodStatus) ProtoMessage() {}
 
 func (x *PodStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_pod_proto_msgTypes[3]
+	mi := &file_pod_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -413,7 +489,7 @@ func (x *PodStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PodStatus.ProtoReflect.Descriptor instead.
 func (*PodStatus) Descriptor() ([]byte, []int) {
-	return file_pod_proto_rawDescGZIP(), []int{3}
+	return file_pod_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PodStatus) GetPhase() PodPhase {
@@ -462,7 +538,7 @@ type Pod struct {
 
 func (x *Pod) Reset() {
 	*x = Pod{}
-	mi := &file_pod_proto_msgTypes[4]
+	mi := &file_pod_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -474,7 +550,7 @@ func (x *Pod) String() string {
 func (*Pod) ProtoMessage() {}
 
 func (x *Pod) ProtoReflect() protoreflect.Message {
-	mi := &file_pod_proto_msgTypes[4]
+	mi := &file_pod_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -487,7 +563,7 @@ func (x *Pod) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Pod.ProtoReflect.Descriptor instead.
 func (*Pod) Descriptor() ([]byte, []int) {
-	return file_pod_proto_rawDescGZIP(), []int{4}
+	return file_pod_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Pod) GetMetadata() *ObjectMeta {
@@ -523,7 +599,12 @@ const file_pod_proto_rawDesc = "" +
 	"privileged\x18\x03 \x01(\bR\n" +
 	"privileged\x12<\n" +
 	"\x1aallow_privilege_escalation\x18\x04 \x01(\bR\x18allowPrivilegeEscalation\x12%\n" +
-	"\x0frun_as_non_root\x18\x05 \x01(\bR\frunAsNonRoot\"\x9d\x03\n" +
+	"\x0frun_as_non_root\x18\x05 \x01(\bR\frunAsNonRoot\"\x8c\x01\n" +
+	"\vBuildSource\x12\x19\n" +
+	"\brepo_url\x18\x01 \x01(\tR\arepoUrl\x12\x16\n" +
+	"\x06branch\x18\x02 \x01(\tR\x06branch\x12'\n" +
+	"\x0fdockerfile_path\x18\x03 \x01(\tR\x0edockerfilePath\x12!\n" +
+	"\fcontext_path\x18\x04 \x01(\tR\vcontextPath\"\xdc\x03\n" +
 	"\tContainer\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12A\n" +
@@ -532,7 +613,8 @@ const file_pod_proto_rawDesc = "" +
 	"\acommand\x18\x05 \x03(\tR\acommand\x12(\n" +
 	"\x10wasm_module_path\x18\x06 \x01(\tR\x0ewasmModulePath\x12'\n" +
 	"\x0fcontainer_ports\x18\a \x03(\x05R\x0econtainerPorts\x123\n" +
-	"\x03env\x18\b \x03(\v2!.nimbuscore.v1.Container.EnvEntryR\x03env\x1a6\n" +
+	"\x03env\x18\b \x03(\v2!.nimbuscore.v1.Container.EnvEntryR\x03env\x12=\n" +
+	"\fbuild_source\x18\t \x01(\v2\x1a.nimbuscore.v1.BuildSourceR\vbuildSource\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdb\x01\n" +
@@ -581,38 +663,40 @@ func file_pod_proto_rawDescGZIP() []byte {
 }
 
 var file_pod_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_pod_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_pod_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_pod_proto_goTypes = []any{
 	(RestartPolicy)(0),           // 0: nimbuscore.v1.RestartPolicy
 	(PodPhase)(0),                // 1: nimbuscore.v1.PodPhase
 	(*SecurityContext)(nil),      // 2: nimbuscore.v1.SecurityContext
-	(*Container)(nil),            // 3: nimbuscore.v1.Container
-	(*PodSpec)(nil),              // 4: nimbuscore.v1.PodSpec
-	(*PodStatus)(nil),            // 5: nimbuscore.v1.PodStatus
-	(*Pod)(nil),                  // 6: nimbuscore.v1.Pod
-	nil,                          // 7: nimbuscore.v1.Container.EnvEntry
-	(*ResourceRequirements)(nil), // 8: nimbuscore.v1.ResourceRequirements
-	(*VolumeMount)(nil),          // 9: nimbuscore.v1.VolumeMount
-	(*Condition)(nil),            // 10: nimbuscore.v1.Condition
-	(*ObjectMeta)(nil),           // 11: nimbuscore.v1.ObjectMeta
+	(*BuildSource)(nil),          // 3: nimbuscore.v1.BuildSource
+	(*Container)(nil),            // 4: nimbuscore.v1.Container
+	(*PodSpec)(nil),              // 5: nimbuscore.v1.PodSpec
+	(*PodStatus)(nil),            // 6: nimbuscore.v1.PodStatus
+	(*Pod)(nil),                  // 7: nimbuscore.v1.Pod
+	nil,                          // 8: nimbuscore.v1.Container.EnvEntry
+	(*ResourceRequirements)(nil), // 9: nimbuscore.v1.ResourceRequirements
+	(*VolumeMount)(nil),          // 10: nimbuscore.v1.VolumeMount
+	(*Condition)(nil),            // 11: nimbuscore.v1.Condition
+	(*ObjectMeta)(nil),           // 12: nimbuscore.v1.ObjectMeta
 }
 var file_pod_proto_depIdxs = []int32{
-	8,  // 0: nimbuscore.v1.Container.resources:type_name -> nimbuscore.v1.ResourceRequirements
+	9,  // 0: nimbuscore.v1.Container.resources:type_name -> nimbuscore.v1.ResourceRequirements
 	2,  // 1: nimbuscore.v1.Container.security_context:type_name -> nimbuscore.v1.SecurityContext
-	7,  // 2: nimbuscore.v1.Container.env:type_name -> nimbuscore.v1.Container.EnvEntry
-	3,  // 3: nimbuscore.v1.PodSpec.containers:type_name -> nimbuscore.v1.Container
-	9,  // 4: nimbuscore.v1.PodSpec.volumes:type_name -> nimbuscore.v1.VolumeMount
-	0,  // 5: nimbuscore.v1.PodSpec.restart_policy:type_name -> nimbuscore.v1.RestartPolicy
-	1,  // 6: nimbuscore.v1.PodStatus.phase:type_name -> nimbuscore.v1.PodPhase
-	10, // 7: nimbuscore.v1.PodStatus.conditions:type_name -> nimbuscore.v1.Condition
-	11, // 8: nimbuscore.v1.Pod.metadata:type_name -> nimbuscore.v1.ObjectMeta
-	4,  // 9: nimbuscore.v1.Pod.spec:type_name -> nimbuscore.v1.PodSpec
-	5,  // 10: nimbuscore.v1.Pod.status:type_name -> nimbuscore.v1.PodStatus
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	8,  // 2: nimbuscore.v1.Container.env:type_name -> nimbuscore.v1.Container.EnvEntry
+	3,  // 3: nimbuscore.v1.Container.build_source:type_name -> nimbuscore.v1.BuildSource
+	4,  // 4: nimbuscore.v1.PodSpec.containers:type_name -> nimbuscore.v1.Container
+	10, // 5: nimbuscore.v1.PodSpec.volumes:type_name -> nimbuscore.v1.VolumeMount
+	0,  // 6: nimbuscore.v1.PodSpec.restart_policy:type_name -> nimbuscore.v1.RestartPolicy
+	1,  // 7: nimbuscore.v1.PodStatus.phase:type_name -> nimbuscore.v1.PodPhase
+	11, // 8: nimbuscore.v1.PodStatus.conditions:type_name -> nimbuscore.v1.Condition
+	12, // 9: nimbuscore.v1.Pod.metadata:type_name -> nimbuscore.v1.ObjectMeta
+	5,  // 10: nimbuscore.v1.Pod.spec:type_name -> nimbuscore.v1.PodSpec
+	6,  // 11: nimbuscore.v1.Pod.status:type_name -> nimbuscore.v1.PodStatus
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_pod_proto_init() }
@@ -628,7 +712,7 @@ func file_pod_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pod_proto_rawDesc), len(file_pod_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -30,6 +30,9 @@ func NewLogHandler(logDir string) http.Handler {
 
 		id := containerNameRaw(namespace, name)
 		path := logFilePath(logDir, id)
+		if r.URL.Query().Get("stream") == "build" {
+			path = buildLogFilePath(logDir, id)
+		}
 
 		lines, err := tailFile(path, tail)
 		if err != nil {

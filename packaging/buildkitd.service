@@ -1,0 +1,13 @@
+[Unit]
+Description=BuildKit daemon (used by nimbus-agent to build images from Git repos)
+After=network.target containerd.service
+Requires=containerd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/buildkitd --config /etc/buildkit/buildkitd.toml --containerd-worker=true --containerd-worker-addr=/run/containerd/containerd.sock --oci-worker=false --addr unix:///run/buildkit/buildkitd.sock
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

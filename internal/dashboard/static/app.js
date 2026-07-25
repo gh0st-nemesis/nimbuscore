@@ -166,11 +166,16 @@ function phaseKind(phase) {
 }
 
 let logsRefreshTimer = null;
+let logsCurrentPod = null;
+let logsCurrentStream = "runtime";
 
-async function refreshLogs(namespace, name) {
+async function refreshLogs() {
+  if (!logsCurrentPod) return;
+  const { namespace, name } = logsCurrentPod;
   const content = document.getElementById("logs-content");
+  const streamParam = logsCurrentStream === "build" ? "&stream=build" : "";
   try {
-    const resp = await fetch(`/api/logs?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}&tail=300`, {
+    const resp = await fetch(`/api/logs?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}&tail=300${streamParam}`, {
       cache: "no-store",
     });
     const text = await resp.text();
@@ -181,20 +186,30 @@ async function refreshLogs(namespace, name) {
   }
 }
 
+function setLogsStream(stream) {
+  logsCurrentStream = stream;
+  document.querySelectorAll("#logs-modal .tab-toggle").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.stream === stream);
+  });
+  document.getElementById("logs-content").textContent = "loading…";
+  refreshLogs();
+}
+
 function openLogsModal(namespace, name) {
   const modal = document.getElementById("logs-modal");
+  logsCurrentPod = { namespace, name };
   document.getElementById("logs-modal-title").textContent = `Logs: ${namespace}/${name}`;
-  document.getElementById("logs-content").textContent = "loading…";
   modal.classList.add("open");
-  refreshLogs(namespace, name);
+  setLogsStream("runtime");
   clearInterval(logsRefreshTimer);
-  logsRefreshTimer = setInterval(() => refreshLogs(namespace, name), 3000);
+  logsRefreshTimer = setInterval(refreshLogs, 3000);
 }
 
 function closeLogsModal() {
   document.getElementById("logs-modal").classList.remove("open");
   clearInterval(logsRefreshTimer);
   logsRefreshTimer = null;
+  logsCurrentPod = null;
 }
 
 function initLogsModal() {
@@ -202,6 +217,9 @@ function initLogsModal() {
   document.getElementById("close-logs-btn").addEventListener("click", closeLogsModal);
   modal.addEventListener("click", (ev) => {
     if (ev.target === modal) closeLogsModal();
+  });
+  document.querySelectorAll("#logs-modal .tab-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => setLogsStream(btn.dataset.stream));
   });
 }
 
@@ -330,7 +348,8 @@ async function refreshDeployments() {
     const replicas = spec.replicas || 0;
     const key = namespace + "/" + name;
     if (replicas > 0) lastKnownReplicas[key] = replicas;
-    const image = (spec.template?.containers || [])[0]?.image || "—";
+    const container0 = (spec.template?.containers || [])[0] || {};
+    const image = container0.image || (container0.buildSource ? "git: " + container0.buildSource.repoUrl : "—");
     tr.appendChild(el("td", null, namespace));
     tr.appendChild(el("td", null, name));
     tr.appendChild(el("td", null, image));
@@ -388,6 +407,14 @@ function collectEnvVars() {
 
 let editingDeployment = null;
 
+function setDeploymentSource(source) {
+  document.querySelectorAll("#new-deployment-modal .tab-toggle").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.source === source);
+  });
+  document.getElementById("source-image-fields").classList.toggle("hidden", source !== "image");
+  document.getElementById("source-git-fields").classList.toggle("hidden", source !== "git");
+}
+
 function openDeploymentModal(existing) {
   const modal = document.getElementById("new-deployment-modal");
   const form = document.getElementById("new-deployment-form");
@@ -398,6 +425,7 @@ function openDeploymentModal(existing) {
   errorEl.textContent = "";
   form.reset();
   document.getElementById("env-vars-rows").innerHTML = "";
+  setDeploymentSource("image");
 
   if (existing) {
     const namespace = existing.metadata?.namespace || "default";
@@ -412,12 +440,20 @@ function openDeploymentModal(existing) {
     form.elements["name"].disabled = true;
     form.elements["namespace"].value = namespace;
     form.elements["namespace"].disabled = true;
-    form.elements["image"].value = container.image || "";
     form.elements["replicas"].value = spec.replicas || 1;
     form.elements["port"].value = (container.containerPorts || [])[0] || "";
     form.elements["command"].value = (container.command || []).join(" ");
     for (const [k, v] of Object.entries(container.env || {})) {
       addEnvVarRow(k, v);
+    }
+    if (container.buildSource) {
+      setDeploymentSource("git");
+      form.elements["gitRepoUrl"].value = container.buildSource.repoUrl || "";
+      form.elements["gitBranch"].value = container.buildSource.branch || "";
+      form.elements["gitDockerfilePath"].value = container.buildSource.dockerfilePath || "";
+      form.elements["gitContextPath"].value = container.buildSource.contextPath || "";
+    } else {
+      form.elements["image"].value = container.image || "";
     }
   } else {
     editingDeployment = null;
@@ -443,22 +479,46 @@ function initDeploymentForm() {
   modal.addEventListener("click", (ev) => {
     if (ev.target === modal) modal.classList.remove("open");
   });
+  document.querySelectorAll("#new-deployment-modal .tab-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => setDeploymentSource(btn.dataset.source));
+  });
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     errorEl.textContent = "";
     const fd = new FormData(form);
     const command = String(fd.get("command") || "").trim();
+    const usingGit = !document.getElementById("source-git-fields").classList.contains("hidden");
 
     const payload = {
       name: editingDeployment ? editingDeployment.name : String(fd.get("name") || "").trim(),
       namespace: editingDeployment ? editingDeployment.namespace : String(fd.get("namespace") || "").trim() || "default",
-      image: String(fd.get("image") || "").trim(),
       replicas: parseInt(fd.get("replicas"), 10) || 1,
       port: parseInt(fd.get("port"), 10) || 0,
       command: command ? command.split(/\s+/) : [],
       env: collectEnvVars(),
     };
+    if (usingGit) {
+      payload.gitRepoUrl = String(fd.get("gitRepoUrl") || "").trim();
+      payload.gitBranch = String(fd.get("gitBranch") || "").trim();
+      payload.gitDockerfilePath = String(fd.get("gitDockerfilePath") || "").trim();
+      payload.gitContextPath = String(fd.get("gitContextPath") || "").trim();
+      if (!payload.gitRepoUrl) {
+        errorEl.textContent = "Repository URL is required";
+        return;
+      }
+    } else {
+      payload.image = String(fd.get("image") || "").trim();
+      if (!payload.image) {
+        errorEl.textContent = "Image is required";
+        return;
+      }
+    }
+
+    const submitBtn = document.getElementById("deployment-submit-btn");
+    const originalLabel = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = usingGit ? "Building…" : "Saving…";
 
     try {
       const result = await fetchJSON("/api/deployments", {
@@ -477,9 +537,14 @@ function initDeploymentForm() {
         showToast(`${payload.name}: created, but could not expose port ${payload.port}: ${result.serviceError}`, true);
       } else if (wasEditing) {
         showToast(`${payload.name}: updated.`);
+      } else if (usingGit) {
+        showToast(`${payload.name}: built from ${payload.gitRepoUrl} and deployed.`);
       }
     } catch (err) {
       errorEl.textContent = err.message || String(err);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalLabel;
     }
   });
 }

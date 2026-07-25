@@ -1,2 +1,3 @@
 /etc/nimbuscore/apiserver.env
 /etc/nimbuscore/agent.env
+/etc/buildkit/buildkitd.toml
