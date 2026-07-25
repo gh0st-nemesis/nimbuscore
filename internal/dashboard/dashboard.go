@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -310,7 +311,15 @@ type createDeploymentRequest struct {
 	MemoryBytes          int64             `json:"memoryBytes"`
 	AddPersistentStorage bool              `json:"addPersistentStorage"`
 	MountPath            string            `json:"mountPath"`
+	Links                []string          `json:"links"`
 }
+
+// linksToLabel is a well-known deployment label recording the names of other
+// deployments (in the same namespace) this one was linked to via the
+// dashboard's "Link a service" action — the canvas reads it to draw a
+// connecting line between the two. Comma-separated since ObjectMeta.Labels
+// only holds plain strings, not lists.
+const linksToLabel = "nimbuscore.io/links-to"
 
 func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request) {
 	var req createDeploymentRequest
@@ -371,11 +380,16 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	labels := map[string]string{"app": req.Name}
+	if len(req.Links) > 0 {
+		labels[linksToLabel] = strings.Join(req.Links, ",")
+	}
+
 	deployment := &v1.Deployment{
 		Metadata: &v1.ObjectMeta{
 			Name:      req.Name,
 			Namespace: req.Namespace,
-			Labels:    map[string]string{"app": req.Name},
+			Labels:    labels,
 		},
 		Spec: &v1.DeploymentSpec{
 			Replicas: req.Replicas,

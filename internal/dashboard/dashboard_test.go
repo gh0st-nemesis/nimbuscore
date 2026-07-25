@@ -245,6 +245,63 @@ func TestDashboardCreateDeploymentWithPortAutoCreatesService(t *testing.T) {
 	}
 }
 
+func TestDashboardCreateDeploymentWithLinksSetsLinksToLabel(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"app","namespace":"default","image":"node:21-alpine","replicas":1,"links":["db","cache"]}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var envelope struct {
+		Deployment struct {
+			Metadata struct {
+				Labels map[string]string `json:"labels"`
+			} `json:"metadata"`
+		} `json:"deployment"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := envelope.Deployment.Metadata.Labels["nimbuscore.io/links-to"]; got != "db,cache" {
+		t.Errorf("nimbuscore.io/links-to label = %q, want %q", got, "db,cache")
+	}
+}
+
+func TestDashboardCreateDeploymentWithoutLinksOmitsLinksToLabel(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"solo","namespace":"default","image":"node:21-alpine","replicas":1}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var envelope struct {
+		Deployment struct {
+			Metadata struct {
+				Labels map[string]string `json:"labels"`
+			} `json:"metadata"`
+		} `json:"deployment"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := envelope.Deployment.Metadata.Labels["nimbuscore.io/links-to"]; ok {
+		t.Errorf("nimbuscore.io/links-to label present without any links requested: %+v", envelope.Deployment.Metadata.Labels)
+	}
+}
+
 func TestDashboardCreateDeploymentWithPersistentStorageCreatesVolume(t *testing.T) {
 	handler, _, _ := newTestHandler(t)
 	srv := httptest.NewServer(handler)

@@ -495,7 +495,9 @@ function openDeploymentPanel(d) {
   const replicas = spec.replicas || 0;
   const volumeMount = (spec.template?.volumes || [])[0] || null;
 
-  panelDeployment = { namespace, name, volumeName: volumeMount?.volumeName || null };
+  const seedKind = (container.image || "").toLowerCase().includes("node") ? "node" : "html";
+  panelDeployment = { namespace, name, volumeName: volumeMount?.volumeName || null, seedKind };
+  panelPendingLinks = parseLinksLabel(d.metadata?.labels);
 
   const filesTabBtn = document.getElementById("panel-files-tab-btn");
   filesTabBtn.classList.toggle("hidden", !volumeMount);
@@ -600,7 +602,17 @@ async function refreshPanelFiles() {
     const entries = await resp.json();
     list.innerHTML = "";
     if (!entries || entries.length === 0) {
-      await writePanelFile("index.html", "<!doctype html>\n<html>\n  <head><title>Hello from NimbusCore</title></head>\n  <body>\n    <h1>It works!</h1>\n    <p>Edit this file from the Files tab to change what's served.</p>\n  </body>\n</html>\n");
+      if (panelDeployment.seedKind === "node") {
+        await writePanelFile(
+          "index.js",
+          "const http = require('http');\n\nhttp\n  .createServer((req, res) => {\n    res.end('Hello from NimbusCore');\n  })\n  .listen(3000);\n"
+        );
+      } else {
+        await writePanelFile(
+          "index.html",
+          "<!doctype html>\n<html>\n  <head><title>Hello from NimbusCore</title></head>\n  <body>\n    <h1>It works!</h1>\n    <p>Edit this file from the Files tab to change what's served.</p>\n  </body>\n</html>\n"
+        );
+      }
       return refreshPanelFiles();
     }
     for (const entry of entries) {
@@ -705,6 +717,7 @@ function initDeploymentPanel() {
     if (!target) return;
     const env = computeLinkEnvVars(target);
     for (const [k, v] of Object.entries(env)) addPanelEnvVarRow(k, v);
+    if (!panelPendingLinks.includes(name)) panelPendingLinks.push(name);
     showToast(`Linked ${name}: added ${Object.keys(env).length} environment variables.`);
   });
 
@@ -745,6 +758,7 @@ function initDeploymentPanel() {
       port: parseInt(fd.get("port"), 10) || 0,
       command: command ? parseCommandFromInput(command) : [],
       env: collectPanelEnvVars(),
+      links: panelPendingLinks,
     };
     if (usingGit) {
       payload.gitRepoUrl = String(fd.get("gitRepoUrl") || "").trim();
@@ -836,6 +850,7 @@ async function openDeploymentModal() {
   form.elements["name"].disabled = false;
   form.elements["namespace"].value = currentNamespace;
   form.elements["namespace"].readOnly = true;
+  pendingLinks = [];
 
   modal.classList.add("open");
 
@@ -868,6 +883,7 @@ function initDeploymentForm() {
     if (!target) return;
     const env = computeLinkEnvVars(target);
     for (const [k, v] of Object.entries(env)) addEnvVarRow(k, v);
+    if (!pendingLinks.includes(name)) pendingLinks.push(name);
     showToast(`Linked ${name}: added ${Object.keys(env).length} environment variables.`);
   });
 
@@ -885,6 +901,7 @@ function initDeploymentForm() {
       port: parseInt(fd.get("port"), 10) || 0,
       command: command ? parseCommandFromInput(command) : [],
       env: collectEnvVars(),
+      links: pendingLinks,
     };
     if (usingGit) {
       payload.gitRepoUrl = String(fd.get("gitRepoUrl") || "").trim();
@@ -1014,6 +1031,12 @@ function selectorMatches(selector, labels) {
 }
 
 let linkableServices = [];
+let pendingLinks = [];
+let panelPendingLinks = [];
+
+function parseLinksLabel(labels) {
+  return (labels?.["nimbuscore.io/links-to"] || "").split(",").filter(Boolean);
+}
 
 async function refreshLinkableServices(excludeName) {
   const [depData, svcData] = await Promise.all([fetchJSON("/api/deployments"), fetchJSON("/api/services")]);
@@ -1121,6 +1144,8 @@ async function refreshCanvas() {
   groupEl.appendChild(el("div", "canvas-group-title", ns));
   const cardsEl = el("div", "canvas-group-cards");
 
+  const cardsByName = {};
+
   for (const d of deployments) {
     const spec = d.spec || {};
     const status = d.status || {};
@@ -1148,6 +1173,7 @@ async function refreshCanvas() {
 
     card.addEventListener("click", () => openDeploymentPanel(d));
     cardsEl.appendChild(card);
+    if (d.metadata?.name) cardsByName[d.metadata.name] = card;
   }
 
   for (const p of pods) {
@@ -1165,6 +1191,61 @@ async function refreshCanvas() {
   groupEl.appendChild(cardsEl);
   surface.appendChild(groupEl);
   applyCanvasTransform();
+  requestAnimationFrame(() => renderCanvasLinks(surface, deployments, cardsByName));
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function renderCanvasLinks(surface, deployments, cardsByName) {
+  const old = document.getElementById("canvas-links-svg");
+  if (old) old.remove();
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("id", "canvas-links-svg");
+  svg.setAttribute("class", "canvas-links-svg");
+  svg.setAttribute("width", surface.scrollWidth);
+  svg.setAttribute("height", surface.scrollHeight);
+
+  const defs = document.createElementNS(SVG_NS, "defs");
+  const marker = document.createElementNS(SVG_NS, "marker");
+  marker.setAttribute("id", "canvas-link-arrow");
+  marker.setAttribute("viewBox", "0 0 10 10");
+  marker.setAttribute("refX", "8");
+  marker.setAttribute("refY", "5");
+  marker.setAttribute("markerWidth", "7");
+  marker.setAttribute("markerHeight", "7");
+  marker.setAttribute("orient", "auto-start-reverse");
+  const arrowPath = document.createElementNS(SVG_NS, "path");
+  arrowPath.setAttribute("d", "M0,0 L10,5 L0,10 z");
+  arrowPath.setAttribute("class", "canvas-link-arrow-head");
+  marker.appendChild(arrowPath);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  let drawn = 0;
+  for (const d of deployments) {
+    const sourceCard = cardsByName[d.metadata?.name];
+    if (!sourceCard) continue;
+    for (const targetName of parseLinksLabel(d.metadata?.labels)) {
+      const targetCard = cardsByName[targetName];
+      if (!targetCard || targetCard === sourceCard) continue;
+      const x1 = sourceCard.offsetLeft + sourceCard.offsetWidth / 2;
+      const y1 = sourceCard.offsetTop + sourceCard.offsetHeight / 2;
+      const x2 = targetCard.offsetLeft + targetCard.offsetWidth / 2;
+      const y2 = targetCard.offsetTop + targetCard.offsetHeight / 2;
+      const line = document.createElementNS(SVG_NS, "line");
+      line.setAttribute("x1", x1);
+      line.setAttribute("y1", y1);
+      line.setAttribute("x2", x2);
+      line.setAttribute("y2", y2);
+      line.setAttribute("class", "canvas-link-line");
+      line.setAttribute("marker-end", "url(#canvas-link-arrow)");
+      svg.appendChild(line);
+      drawn++;
+    }
+  }
+
+  if (drawn > 0) surface.insertBefore(svg, surface.firstChild);
 }
 
 function initCanvas() {
@@ -1205,6 +1286,10 @@ function initCanvas() {
   window.addEventListener("mouseup", () => {
     dragging = false;
     viewport.classList.remove("dragging");
+  });
+  viewport.addEventListener("contextmenu", (ev) => {
+    ev.preventDefault();
+    openCreateMenuAt(ev.clientX, ev.clientY);
   });
   viewport.addEventListener(
     "wheel",
@@ -1370,15 +1455,33 @@ const DATABASE_PRESETS = [
 ];
 
 const TEMPLATE_PRESETS = [
-  { name: "Nginx web server", desc: "nginx:alpine, port 80", image: "nginx:alpine", port: 80, command: [] },
   {
-    name: "Node.js hello world",
-    desc: "node:21-alpine, port 3000, inline server",
+    name: "Nginx web server",
+    desc: "nginx:alpine, port 80, editable static files",
+    image: "nginx:alpine",
+    port: 80,
+    command: [],
+    persistent: true,
+    mountPath: "/usr/share/nginx/html",
+  },
+  {
+    name: "Node.js app",
+    desc: "node:21-alpine, port 3000, editable index.js",
     image: "node:21-alpine",
     port: 3000,
-    command: ["node", "-e", "require('http').createServer((_,r)=>r.end('hello from NimbusCore')).listen(3000)"],
+    command: ["node", "/app/index.js"],
+    persistent: true,
+    mountPath: "/app",
   },
-  { name: "Static file server", desc: "nginx:alpine, port 80", image: "nginx:alpine", port: 80, command: [] },
+  {
+    name: "Static file server",
+    desc: "nginx:alpine, port 80, editable static files",
+    image: "nginx:alpine",
+    port: 80,
+    command: [],
+    persistent: true,
+    mountPath: "/usr/share/nginx/html",
+  },
 ];
 
 function applyPresetToModal(preset) {
@@ -1391,10 +1494,9 @@ function applyPresetToModal(preset) {
   document.getElementById("env-vars-rows").innerHTML = "";
   for (const [k, v] of Object.entries(preset.env || {})) addEnvVarRow(k, v);
 
-  const isNginx = (preset.image || "").toLowerCase().startsWith("nginx");
-  form.elements["addPersistentStorage"].checked = isNginx;
-  form.elements["mountPath"].value = isNginx ? "/usr/share/nginx/html" : "";
-  document.getElementById("mount-path-field").classList.toggle("hidden", !isNginx);
+  form.elements["addPersistentStorage"].checked = !!preset.persistent;
+  form.elements["mountPath"].value = preset.persistent ? preset.mountPath : "";
+  document.getElementById("mount-path-field").classList.toggle("hidden", !preset.persistent);
 }
 
 function openPresetModal(kind) {
@@ -1434,11 +1536,44 @@ function initPresetModal() {
   });
 }
 
+function dispatchCreateKind(kind) {
+  if (kind === "image") {
+    openDeploymentModal();
+    setDeploymentSource("image");
+  } else if (kind === "git") {
+    openDeploymentModal();
+    setDeploymentSource("git");
+  } else if (kind === "database") {
+    openPresetModal("database");
+  } else if (kind === "template") {
+    openPresetModal("template");
+  } else if (kind === "empty") {
+    openDeploymentModal();
+    const form = document.getElementById("new-deployment-form");
+    setDeploymentSource("image");
+    form.elements["image"].value = "alpine";
+    form.elements["command"].value = "sleep 3600";
+  }
+}
+
+function openCreateMenuAt(clientX, clientY) {
+  const menu = document.getElementById("create-menu");
+  const wrap = document.getElementById("create-menu-btn").closest(".create-menu-wrap");
+  const wrapRect = wrap.getBoundingClientRect();
+  menu.style.left = clientX - wrapRect.left + "px";
+  menu.style.top = clientY - wrapRect.top + "px";
+  menu.style.right = "auto";
+  menu.classList.remove("hidden");
+}
+
 function initCreateMenu() {
   const menu = document.getElementById("create-menu");
   const btn = document.getElementById("create-menu-btn");
   btn.addEventListener("click", (ev) => {
     ev.stopPropagation();
+    menu.style.left = "";
+    menu.style.top = "";
+    menu.style.right = "";
     menu.classList.toggle("hidden");
   });
   document.addEventListener("click", () => menu.classList.add("hidden"));
@@ -1447,24 +1582,7 @@ function initCreateMenu() {
   document.querySelectorAll(".create-menu-item[data-create]").forEach((item) => {
     item.addEventListener("click", () => {
       menu.classList.add("hidden");
-      const kind = item.dataset.create;
-      if (kind === "image") {
-        openDeploymentModal();
-        setDeploymentSource("image");
-      } else if (kind === "git") {
-        openDeploymentModal();
-        setDeploymentSource("git");
-      } else if (kind === "database") {
-        openPresetModal("database");
-      } else if (kind === "template") {
-        openPresetModal("template");
-      } else if (kind === "empty") {
-        openDeploymentModal();
-        const form = document.getElementById("new-deployment-form");
-        setDeploymentSource("image");
-        form.elements["image"].value = "alpine";
-        form.elements["command"].value = "sleep 3600";
-      }
+      dispatchCreateKind(item.dataset.create);
     });
   });
 }
