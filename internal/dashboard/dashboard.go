@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
+	"github.com/gh0st-nemesis/nimbuscore/internal/controller"
 	"github.com/gh0st-nemesis/nimbuscore/internal/finops"
 	"github.com/gh0st-nemesis/nimbuscore/internal/gitops"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
@@ -138,6 +140,9 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 		req.Replicas = 1
 	}
 
+	_, getErr := cfg.DeploymentSvc.GetDeployment(r.Context(), &v1.GetDeploymentRequest{Namespace: req.Namespace, Name: req.Name})
+	isEdit := getErr == nil
+
 	var ports []int32
 	if req.Port > 0 {
 		ports = []int32{req.Port}
@@ -175,6 +180,10 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if isEdit {
+		cfg.restartOwnedPods(r.Context(), req.Namespace, req.Name)
+	}
+
 	depJSON, err := protojson.Marshal(created)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -199,6 +208,19 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(envelope) //nolint:errcheck
+}
+
+func (cfg Config) restartOwnedPods(ctx context.Context, namespace, name string) {
+	pods, err := cfg.Pods.List(ctx, namespace)
+	if err != nil {
+		return
+	}
+	for _, p := range pods {
+		if p.GetMetadata().GetLabels()[controller.OwnerDeploymentLabel] != name {
+			continue
+		}
+		_ = cfg.Pods.Delete(ctx, p.GetMetadata().GetNamespace(), p.GetMetadata().GetName())
+	}
 }
 
 func (cfg Config) handleDeleteDeployment(w http.ResponseWriter, r *http.Request) {

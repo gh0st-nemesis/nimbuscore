@@ -10,6 +10,7 @@ import (
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
 	"github.com/gh0st-nemesis/nimbuscore/internal/admission"
 	"github.com/gh0st-nemesis/nimbuscore/internal/apiserver"
+	"github.com/gh0st-nemesis/nimbuscore/internal/controller"
 	"github.com/gh0st-nemesis/nimbuscore/internal/dashboard"
 	"github.com/gh0st-nemesis/nimbuscore/internal/finops"
 	"github.com/gh0st-nemesis/nimbuscore/internal/registry"
@@ -319,6 +320,53 @@ func TestDashboardEditDeploymentUpdatesEnvVars(t *testing.T) {
 	env := decoded.Items[0].Spec.Template.Containers[0].Env
 	if env["FOO"] != "new" || env["BAR"] != "added" {
 		t.Errorf("env after update = %+v, want FOO=new, BAR=added", env)
+	}
+}
+
+func TestDashboardEditDeploymentRestartsOwnedPods(t *testing.T) {
+	handler, pods, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	create := strings.NewReader(`{"name":"web","image":"nginx:alpine"}`)
+	if _, err := http.Post(srv.URL+"/api/deployments", "application/json", create); err != nil {
+		t.Fatalf("POST create: %v", err)
+	}
+
+	if err := pods.Put(t.Context(), "default", "web-0", &v1.Pod{
+		Metadata: &v1.ObjectMeta{Name: "web-0", Namespace: "default", Labels: map[string]string{controller.OwnerDeploymentLabel: "web"}},
+	}); err != nil {
+		t.Fatalf("seed pod: %v", err)
+	}
+
+	update := strings.NewReader(`{"name":"web","namespace":"default","image":"nginx:alpine","env":{"FOO":"bar"}}`)
+	if _, err := http.Post(srv.URL+"/api/deployments", "application/json", update); err != nil {
+		t.Fatalf("POST update: %v", err)
+	}
+
+	if _, err := pods.Get(t.Context(), "default", "web-0"); err == nil {
+		t.Error("owned pod still exists after editing the deployment, want it deleted so the reconciler recreates it with the updated spec")
+	}
+}
+
+func TestDashboardCreateDeploymentDoesNotRestartUnrelatedPods(t *testing.T) {
+	handler, pods, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	if err := pods.Put(t.Context(), "default", "standalone", &v1.Pod{
+		Metadata: &v1.ObjectMeta{Name: "standalone", Namespace: "default"},
+	}); err != nil {
+		t.Fatalf("seed pod: %v", err)
+	}
+
+	create := strings.NewReader(`{"name":"web","image":"nginx:alpine"}`)
+	if _, err := http.Post(srv.URL+"/api/deployments", "application/json", create); err != nil {
+		t.Fatalf("POST create: %v", err)
+	}
+
+	if _, err := pods.Get(t.Context(), "default", "standalone"); err != nil {
+		t.Errorf("unrelated pod was removed by an unrelated deployment create: %v", err)
 	}
 }
 
