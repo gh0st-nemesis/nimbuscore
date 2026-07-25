@@ -1,15 +1,26 @@
+@font-face {
+  font-family: "Inter";
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  src: url("fonts/InterVariable.woff2") format("woff2-variations"), url("fonts/InterVariable.woff2") format("woff2");
+}
+
 :root {
   color-scheme: dark;
-  --bg: #05070d;
-  --panel: #0c0f1c;
+  --bg: #08080a;
+  --panel: #121215;
   --panel-2: #10142400;
-  --border: #1e2436;
-  --text: #e8eaf2;
-  --muted: #7d869c;
+  --border: #232327;
+  --text: #f4f4f5;
+  --muted: #87878f;
   --blue: #3b82f6;
   --blue-2: #60a5fa;
   --purple: #7c3aed;
   --purple-2: #a78bfa;
+  --accent: var(--purple);
+  --accent-2: var(--purple-2);
+  --accent-rgb: 124, 58, 237;
   --ok: #34d399;
   --bad: #f87171;
   --gradient: linear-gradient(120deg, var(--blue) 0%, var(--purple) 100%);
@@ -27,23 +38,26 @@
   --space-5: 1.5rem;
   --space-6: 2rem;
 
-  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.25);
-  --shadow-md: 0 10px 40px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 10px 40px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.55);
 
-  --transition-fast: 0.15s ease;
-  --transition-med: 0.25s ease;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-fast: 0.15s var(--ease-out);
+  --transition-med: 0.25s var(--ease-out);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   background:
-    radial-gradient(circle at 15% -10%, rgba(59, 130, 246, 0.22), transparent 45%),
-    radial-gradient(circle at 85% 0%, rgba(124, 58, 237, 0.22), transparent 45%),
-    radial-gradient(circle at 50% 100%, rgba(59, 130, 246, 0.08), transparent 60%),
+    radial-gradient(circle at 15% -10%, rgba(var(--accent-rgb), 0.2), transparent 45%),
+    radial-gradient(circle at 85% 0%, rgba(var(--accent-rgb), 0.16), transparent 45%),
+    radial-gradient(circle at 50% 100%, rgba(var(--accent-rgb), 0.06), transparent 60%),
     var(--bg);
   background-attachment: fixed;
   color: var(--text);
@@ -83,9 +97,9 @@ header {
 }
 
 .brand-name {
-  font-size: 1.05rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: 1.1rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
 .brand-name em {
@@ -128,8 +142,8 @@ nav#tabs {
 
 .tab.active {
   color: var(--text);
-  background: rgba(59, 130, 246, 0.12);
-  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.35);
 }
 
 #clock {
@@ -161,7 +175,19 @@ main {
   display: none;
 }
 
+@keyframes tab-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .tab-panel.active {
+  animation: tab-panel-in 0.3s var(--ease-out) both;
   display: block;
 }
 
@@ -190,18 +216,19 @@ main {
 
 h2 {
   margin: 0 0 0.85rem 0;
-  font-size: 0.95rem;
+  font-size: 0.8rem;
+  font-weight: 600;
   color: var(--muted);
   display: flex;
   align-items: center;
   gap: 0.5rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 
 .count {
-  background: rgba(59, 130, 246, 0.15);
-  color: var(--blue-2);
+  background: rgba(var(--accent-rgb), 0.15);
+  color: var(--accent-2);
   border-radius: var(--radius-pill);
   padding: 0.05rem 0.55rem;
   font-size: 0.75rem;
@@ -259,17 +286,17 @@ tbody tr:hover {
 }
 
 .card {
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
   padding: 0.8rem 1.1rem;
   min-width: 150px;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
 .card:hover {
-  border-color: var(--muted);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.045);
 }
 
 .card .label {
@@ -280,8 +307,9 @@ tbody tr:hover {
 }
 
 .card .value {
-  font-size: 1.5rem;
-  font-weight: 600;
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   margin-top: 0.2rem;
   background: var(--gradient);
   -webkit-background-clip: text;
@@ -298,10 +326,15 @@ tbody tr:hover {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+  transition: filter var(--transition-fast), transform var(--transition-fast);
 }
 
 .btn-primary:hover {
   filter: brightness(1.1);
+}
+
+.btn-primary:active {
+  transform: scale(0.97);
 }
 
 .btn-ghost {
@@ -312,11 +345,17 @@ tbody tr:hover {
   padding: 0.5rem 1.1rem;
   font-size: 0.85rem;
   cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
 }
 
 .btn-ghost:hover {
   color: var(--text);
   border-color: var(--muted);
+}
+
+.btn-ghost:active,
+.tab-toggle:active {
+  transform: scale(0.97);
 }
 
 .modal-backdrop {
@@ -373,7 +412,7 @@ tbody tr:hover {
 
 .modal input:focus {
   outline: none;
-  border-color: var(--blue);
+  border-color: var(--accent);
 }
 
 .modal-actions {
@@ -516,7 +555,7 @@ footer {
 
 .sparkline polyline {
   fill: none;
-  stroke: var(--blue-2);
+  stroke: var(--accent-2);
   stroke-width: 1.5;
 }
 
@@ -545,7 +584,7 @@ footer {
 }
 
 .endpoint-link {
-  color: var(--blue-2);
+  color: var(--accent-2);
   text-decoration: none;
 }
 
@@ -602,7 +641,7 @@ footer {
 
 .env-var-row input:focus {
   outline: none;
-  border-color: var(--blue);
+  border-color: var(--accent);
 }
 
 .modal-wide {
@@ -627,12 +666,13 @@ footer {
   padding: 0.5rem;
   font-size: 0.82rem;
   cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
 }
 
 .tab-toggle.active {
   color: var(--text);
-  border-color: var(--blue);
-  background: rgba(59, 130, 246, 0.12);
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
 }
 
 .source-fields {
@@ -768,7 +808,7 @@ footer {
 
 .side-tab.active {
   color: var(--text);
-  border-bottom-color: var(--blue);
+  border-bottom-color: var(--accent);
 }
 
 .side-panel-body {
@@ -905,7 +945,7 @@ footer {
 }
 
 .canvas-card:hover {
-  border-color: var(--blue);
+  border-color: var(--accent);
   box-shadow: var(--shadow-md);
   transform: translateY(-2px);
 }
@@ -1078,7 +1118,7 @@ footer {
 }
 
 .preset-item:hover {
-  border-color: var(--blue);
+  border-color: var(--accent);
   box-shadow: var(--shadow-sm);
   transform: translateY(-1px);
 }
@@ -1169,8 +1209,8 @@ footer {
 }
 
 .file-item.active {
-  background: rgba(59, 130, 246, 0.12);
-  color: var(--blue-2);
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent-2);
 }
 
 .files-list-actions {
@@ -1227,7 +1267,7 @@ footer {
 
 .files-editor:focus {
   outline: none;
-  border-color: var(--blue);
+  border-color: var(--accent);
 }
 
 body.login-page {
@@ -1316,8 +1356,8 @@ body.login-page {
 
 .login-card input:focus {
   outline: none;
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
 }
 
 .login-submit {
