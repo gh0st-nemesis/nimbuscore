@@ -245,9 +245,9 @@ type fsm struct {
 	data map[string][]byte
 }
 
-func (f *fsm) Apply(log *raft.Log) any {
+func (f *fsm) Apply(raftLog *raft.Log) any {
 	var cmd command
-	if err := json.Unmarshal(log.Data, &cmd); err != nil {
+	if err := json.Unmarshal(raftLog.Data, &cmd); err != nil {
 		return err
 	}
 
@@ -257,7 +257,11 @@ func (f *fsm) Apply(log *raft.Log) any {
 	case "put":
 		f.data[cmd.Key] = cmd.Value
 	case "delete":
+		_, existed := f.data[cmd.Key]
 		delete(f.data, cmd.Key)
+		if existed {
+			log.Printf("store: applied delete for %q (raft index=%d term=%d)", cmd.Key, raftLog.Index, raftLog.Term)
+		}
 	}
 	return nil
 }
