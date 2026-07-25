@@ -785,6 +785,167 @@ async function refreshCICD() {
   });
 }
 
+let canvasScale = 1;
+let canvasOffsetX = 0;
+let canvasOffsetY = 0;
+
+function applyCanvasTransform() {
+  const surface = document.getElementById("canvas-surface");
+  surface.style.transform = `translate(${canvasOffsetX}px, ${canvasOffsetY}px) scale(${canvasScale})`;
+}
+
+function selectorMatches(selector, labels) {
+  if (!selector || Object.keys(selector).length === 0) return false;
+  labels = labels || {};
+  return Object.entries(selector).every(([k, v]) => labels[k] === v);
+}
+
+function deploymentStatusClass(replicas, ready) {
+  if (replicas <= 0) return "";
+  if (ready >= replicas) return "ok";
+  return "pending";
+}
+
+async function refreshCanvas() {
+  const [depData, svcData, podData] = await Promise.all([
+    fetchJSON("/api/deployments"),
+    fetchJSON("/api/services"),
+    fetchJSON("/api/pods"),
+  ]);
+  const deployments = depData.items || [];
+  const services = svcData.items || [];
+  const pods = podData.items || [];
+
+  const groups = {};
+  const groupOf = (ns) => groups[ns] || (groups[ns] = { deployments: [], pods: [] });
+
+  for (const d of deployments) {
+    groupOf(d.metadata?.namespace || "default").deployments.push(d);
+  }
+  for (const p of pods) {
+    if (p.metadata?.labels?.["nimbuscore.io/owner-deployment"]) continue;
+    groupOf(p.metadata?.namespace || "default").pods.push(p);
+  }
+
+  const surface = document.getElementById("canvas-surface");
+  surface.innerHTML = "";
+
+  const namespaces = Object.keys(groups).sort();
+  if (namespaces.length === 0) {
+    surface.appendChild(el("div", "canvas-empty", "No deployments yet — click + Create to add one."));
+    applyCanvasTransform();
+    return;
+  }
+
+  for (const ns of namespaces) {
+    const group = groups[ns];
+    const groupEl = el("div", "canvas-group");
+    groupEl.appendChild(el("div", "canvas-group-title", ns));
+    const cardsEl = el("div", "canvas-group-cards");
+
+    for (const d of group.deployments) {
+      const spec = d.spec || {};
+      const status = d.status || {};
+      const container = (spec.template?.containers || [])[0] || {};
+      const replicas = spec.replicas || 0;
+      const ready = status.readyReplicas || 0;
+      const podLabels = spec.selector || {};
+
+      const card = el("div", "canvas-card");
+      const head = el("div", "canvas-card-head");
+      head.appendChild(el("span", "canvas-status-dot " + deploymentStatusClass(replicas, ready)));
+      head.appendChild(el("span", "canvas-card-name", d.metadata?.name || ""));
+      card.appendChild(head);
+      const image = container.image || (container.buildSource ? "git: " + container.buildSource.repoUrl : "—");
+      card.appendChild(el("div", "canvas-card-meta", image));
+      card.appendChild(el("div", "canvas-card-meta", `${ready} / ${replicas} ready`));
+
+      const matchingService = services.find(
+        (s) => (s.metadata?.namespace || "default") === ns && selectorMatches(s.spec?.selector, podLabels)
+      );
+      if (matchingService) {
+        const endpoints = matchingService.status?.endpoints || [];
+        const first = endpoints[0];
+        const text = first ? `${first.nodeIp}:${first.nodePort}` : `nodePort ${matchingService.spec?.nodePort ?? "?"}`;
+        card.appendChild(el("div", "canvas-card-service", "→ " + text));
+      }
+
+      card.addEventListener("click", () => openDeploymentPanel(d));
+      cardsEl.appendChild(card);
+    }
+
+    for (const p of group.pods) {
+      const status = p.status || {};
+      const card = el("div", "canvas-card");
+      const head = el("div", "canvas-card-head");
+      head.appendChild(el("span", "canvas-status-dot " + phaseKind(status.phase)));
+      head.appendChild(el("span", "canvas-card-name", p.metadata?.name || ""));
+      card.appendChild(head);
+      card.appendChild(el("div", "canvas-card-meta", "standalone pod"));
+      card.appendChild(el("div", "canvas-card-meta", (status.phase || "").replace("POD_PHASE_", "")));
+      cardsEl.appendChild(card);
+    }
+
+    groupEl.appendChild(cardsEl);
+    surface.appendChild(groupEl);
+  }
+
+  applyCanvasTransform();
+}
+
+function initCanvas() {
+  const viewport = document.getElementById("canvas-viewport");
+
+  document.getElementById("canvas-zoom-in").addEventListener("click", () => {
+    canvasScale = Math.min(2, canvasScale + 0.15);
+    applyCanvasTransform();
+  });
+  document.getElementById("canvas-zoom-out").addEventListener("click", () => {
+    canvasScale = Math.max(0.4, canvasScale - 0.15);
+    applyCanvasTransform();
+  });
+  document.getElementById("canvas-zoom-fit").addEventListener("click", () => {
+    canvasScale = 1;
+    canvasOffsetX = 0;
+    canvasOffsetY = 0;
+    applyCanvasTransform();
+  });
+  document.getElementById("new-deployment-btn-canvas").addEventListener("click", () => openDeploymentModal());
+
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
+  viewport.addEventListener("mousedown", (ev) => {
+    if (ev.target.closest(".canvas-card")) return;
+    dragging = true;
+    lastX = ev.clientX;
+    lastY = ev.clientY;
+    viewport.classList.add("dragging");
+  });
+  window.addEventListener("mousemove", (ev) => {
+    if (!dragging) return;
+    canvasOffsetX += ev.clientX - lastX;
+    canvasOffsetY += ev.clientY - lastY;
+    lastX = ev.clientX;
+    lastY = ev.clientY;
+    applyCanvasTransform();
+  });
+  window.addEventListener("mouseup", () => {
+    dragging = false;
+    viewport.classList.remove("dragging");
+  });
+  viewport.addEventListener(
+    "wheel",
+    (ev) => {
+      ev.preventDefault();
+      const delta = ev.deltaY > 0 ? -0.1 : 0.1;
+      canvasScale = Math.min(2, Math.max(0.4, canvasScale + delta));
+      applyCanvasTransform();
+    },
+    { passive: false }
+  );
+}
+
 function updateClock() {
   document.getElementById("clock").textContent = new Date().toLocaleString();
 }
@@ -799,6 +960,7 @@ async function refreshAll() {
     refreshDeployments(),
     refreshCICD(),
     refreshMetrics(),
+    refreshCanvas(),
   ]);
 }
 
@@ -806,6 +968,7 @@ initTabs();
 initDeploymentForm();
 initLogsModal();
 initDeploymentPanel();
+initCanvas();
 refreshAll();
 setInterval(refreshAll, 5000);
 setInterval(updateClock, 1000);

@@ -16,7 +16,8 @@
     </div>
   </div>
   <nav id="tabs">
-    <button class="tab active" data-tab="overview">Overview</button>
+    <button class="tab active" data-tab="architecture">Architecture</button>
+    <button class="tab" data-tab="overview">Overview</button>
     <button class="tab" data-tab="deployments">Deployments</button>
     <button class="tab" data-tab="cicd">CI/CD</button>
   </nav>
@@ -24,7 +25,21 @@
 </header>
 
 <main>
-  <section id="tab-overview" class="tab-panel active">
+  <section id="tab-architecture" class="tab-panel active">
+    <div class="canvas-toolbar">
+      <div class="canvas-zoom-controls">
+        <button type="button" id="canvas-zoom-in" class="btn-ghost btn-small" title="Zoom in">+</button>
+        <button type="button" id="canvas-zoom-out" class="btn-ghost btn-small" title="Zoom out">−</button>
+        <button type="button" id="canvas-zoom-fit" class="btn-ghost btn-small" title="Reset view">⤢</button>
+      </div>
+      <button id="new-deployment-btn-canvas" class="btn-primary">+ Create</button>
+    </div>
+    <div id="canvas-viewport" class="canvas-viewport">
+      <div id="canvas-surface" class="canvas-surface"></div>
+    </div>
+  </section>
+
+  <section id="tab-overview" class="tab-panel">
     <div class="panel">
       <h2>Cluster resources</h2>
       <div id="cluster-resources"></div>

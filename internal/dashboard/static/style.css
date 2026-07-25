@@ -738,3 +738,133 @@ footer {
 .clickable-row {
   cursor: pointer;
 }
+
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem 1rem;
+}
+
+.canvas-zoom-controls {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.canvas-zoom-controls button {
+  width: 34px;
+}
+
+.canvas-viewport {
+  position: relative;
+  height: calc(100vh - 130px);
+  margin: 0 1.5rem 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 1px) 0 0 / 22px 22px,
+    var(--bg);
+  cursor: grab;
+}
+
+.canvas-viewport.dragging {
+  cursor: grabbing;
+}
+
+.canvas-surface {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  width: max-content;
+}
+
+.canvas-group {
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.canvas-group-title {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 0.8rem;
+}
+
+.canvas-group-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.canvas-card {
+  width: 240px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent), var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s;
+}
+
+.canvas-card:hover {
+  border-color: var(--blue);
+}
+
+.canvas-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.canvas-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.canvas-status-dot.ok { background: var(--ok); }
+.canvas-status-dot.bad { background: var(--bad); }
+.canvas-status-dot.pending { background: #f59e0b; }
+
+.canvas-card-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-card-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-card-service {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--purple-2);
+}
+
+.canvas-empty {
+  color: var(--muted);
+  font-style: italic;
+  padding: 2rem;
+}
