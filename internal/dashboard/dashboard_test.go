@@ -28,6 +28,7 @@ func newTestHandler(t *testing.T) (http.Handler, *registry.Registry[*v1.Pod], *r
 		Pods:          pods,
 		DeploymentSvc: apiserver.NewDeploymentService(s, admission.NewChain()),
 		Services:      apiserver.NewServiceService(s),
+		Namespaces:    apiserver.NewNamespaceService(s),
 		CostModel:     finops.DefaultCostModel(),
 	})
 	if err != nil {
@@ -229,6 +230,77 @@ func TestDashboardCreateDeploymentWithPortAutoCreatesService(t *testing.T) {
 	}
 	if len(svcList.Items) != 1 || svcList.Items[0].Metadata.Name != "web" {
 		t.Errorf("services = %+v, want one service named web", svcList.Items)
+	}
+}
+
+func TestDashboardCreateAndListNamespaces(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name":"prod"}`)
+	resp, err := http.Post(srv.URL+"/api/namespaces", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/namespaces: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	listResp, err := http.Get(srv.URL + "/api/namespaces")
+	if err != nil {
+		t.Fatalf("GET /api/namespaces: %v", err)
+	}
+	defer listResp.Body.Close()
+	var decoded struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(decoded.Items) != 1 || decoded.Items[0].Metadata.Name != "prod" {
+		t.Fatalf("items = %+v, want one namespace named prod", decoded.Items)
+	}
+}
+
+func TestDashboardDeleteNamespace(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	create := strings.NewReader(`{"name":"staging"}`)
+	if _, err := http.Post(srv.URL+"/api/namespaces", "application/json", create); err != nil {
+		t.Fatalf("POST /api/namespaces: %v", err)
+	}
+
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/namespaces?name=staging", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE /api/namespaces: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+
+	listResp, err := http.Get(srv.URL + "/api/namespaces")
+	if err != nil {
+		t.Fatalf("GET /api/namespaces: %v", err)
+	}
+	defer listResp.Body.Close()
+	var decoded struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(decoded.Items) != 0 {
+		t.Errorf("got %d namespaces after delete, want 0", len(decoded.Items))
 	}
 }
 

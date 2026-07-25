@@ -15,30 +15,21 @@
       <span class="brand-sub">cluster dashboard</span>
     </div>
   </div>
+
+  <div class="project-switcher">
+    <select id="project-select"></select>
+    <button type="button" id="new-project-btn" class="btn-ghost btn-small" title="New project">+ New project</button>
+  </div>
+
   <nav id="tabs">
-    <button class="tab active" data-tab="architecture">Architecture</button>
+    <button class="tab active" data-tab="deployments">Deployments</button>
     <button class="tab" data-tab="overview">Overview</button>
-    <button class="tab" data-tab="deployments">Deployments</button>
     <button class="tab" data-tab="cicd">CI/CD</button>
   </nav>
   <span id="clock"></span>
 </header>
 
 <main>
-  <section id="tab-architecture" class="tab-panel active">
-    <div class="canvas-toolbar">
-      <div class="canvas-zoom-controls">
-        <button type="button" id="canvas-zoom-in" class="btn-ghost btn-small" title="Zoom in">+</button>
-        <button type="button" id="canvas-zoom-out" class="btn-ghost btn-small" title="Zoom out">−</button>
-        <button type="button" id="canvas-zoom-fit" class="btn-ghost btn-small" title="Reset view">⤢</button>
-      </div>
-      <button id="new-deployment-btn-canvas" class="btn-primary">+ Create</button>
-    </div>
-    <div id="canvas-viewport" class="canvas-viewport">
-      <div id="canvas-surface" class="canvas-surface"></div>
-    </div>
-  </section>
-
   <section id="tab-overview" class="tab-panel">
     <div class="panel">
       <h2>Cluster resources</h2>
@@ -77,11 +68,61 @@
     </div>
   </section>
 
-  <section id="tab-deployments" class="tab-panel">
-    <div class="panel">
+  <section id="tab-deployments" class="tab-panel active">
+    <div class="canvas-toolbar">
+      <div class="view-toggle">
+        <button type="button" class="tab-toggle active" data-view="canvas">Canvas</button>
+        <button type="button" class="tab-toggle" data-view="table">Table</button>
+      </div>
+      <div class="canvas-toolbar-right">
+        <div class="canvas-zoom-controls">
+          <button type="button" id="canvas-zoom-in" class="btn-ghost btn-small" title="Zoom in">+</button>
+          <button type="button" id="canvas-zoom-out" class="btn-ghost btn-small" title="Zoom out">−</button>
+          <button type="button" id="canvas-zoom-fit" class="btn-ghost btn-small" title="Reset view">⤢</button>
+        </div>
+        <div class="create-menu-wrap">
+          <button type="button" id="create-menu-btn" class="btn-primary">+ Create</button>
+          <div id="create-menu" class="create-menu hidden">
+            <button type="button" class="create-menu-item" data-create="image">
+              <span class="create-menu-icon">📦</span>
+              <span><span class="create-menu-title">Docker Image</span><span class="create-menu-desc">Deploy from an image reference</span></span>
+            </button>
+            <button type="button" class="create-menu-item" data-create="git">
+              <span class="create-menu-icon">🐙</span>
+              <span><span class="create-menu-title">GitHub Repo</span><span class="create-menu-desc">Build from a Dockerfile in a repo</span></span>
+            </button>
+            <button type="button" class="create-menu-item" data-create="database">
+              <span class="create-menu-icon">🗄️</span>
+              <span><span class="create-menu-title">Database</span><span class="create-menu-desc">One-click Postgres, Redis, MySQL, MongoDB</span></span>
+            </button>
+            <button type="button" class="create-menu-item" data-create="template">
+              <span class="create-menu-icon">🧩</span>
+              <span><span class="create-menu-title">Template</span><span class="create-menu-desc">Start from a common preset</span></span>
+            </button>
+            <button type="button" class="create-menu-item" data-create="empty">
+              <span class="create-menu-icon">⬚</span>
+              <span><span class="create-menu-title">Empty Service</span><span class="create-menu-desc">Blank deployment, configure after</span></span>
+            </button>
+            <button type="button" class="create-menu-item disabled" disabled title="Not available — no serverless runtime in NimbusCore">
+              <span class="create-menu-icon">λ</span>
+              <span><span class="create-menu-title">Function</span><span class="create-menu-desc">Coming soon</span></span>
+            </button>
+            <button type="button" class="create-menu-item disabled" disabled title="Not available — no object storage runtime in NimbusCore">
+              <span class="create-menu-icon">🪣</span>
+              <span><span class="create-menu-title">Bucket</span><span class="create-menu-desc">Coming soon</span></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="canvas-viewport" class="canvas-viewport">
+      <div id="canvas-surface" class="canvas-surface"></div>
+    </div>
+
+    <div id="deployments-table-view" class="panel hidden">
       <div class="panel-head">
         <h2>Deployments <span class="count" id="deployments-count">0</span></h2>
-        <button id="new-deployment-btn" class="btn-primary">+ New deployment</button>
       </div>
       <table id="deployments-table">
         <thead><tr><th>Namespace</th><th>Name</th><th>Image</th><th>Replicas</th><th>Ready</th><th></th></tr></thead>
@@ -141,6 +182,30 @@
         <button type="submit" id="deployment-submit-btn" class="btn-primary">Create</button>
       </div>
       <p id="deployment-form-error" class="form-error"></p>
+    </form>
+  </div>
+</div>
+
+<div id="preset-modal" class="modal-backdrop">
+  <div class="modal">
+    <h3 id="preset-modal-title">Choose a preset</h3>
+    <div id="preset-list" class="preset-list"></div>
+    <div class="modal-actions">
+      <button type="button" id="cancel-preset-btn" class="btn-ghost">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="new-project-modal" class="modal-backdrop">
+  <div class="modal">
+    <h3>New project</h3>
+    <form id="new-project-form">
+      <label>Name <input name="name" required placeholder="my-project"></label>
+      <div class="modal-actions">
+        <button type="button" id="cancel-project-btn" class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Create</button>
+      </div>
+      <p id="project-form-error" class="form-error"></p>
     </form>
   </div>
 </div>

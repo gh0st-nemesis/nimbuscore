@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package nimbuscore.v1;
+
+import "common.proto";
+
+option go_package = "github.com/gh0st-nemesis/nimbuscore/api/v1;v1";
+
+message Namespace {
+  ObjectMeta metadata = 1;
+}
+
+service NamespaceService {
+  rpc CreateNamespace(CreateNamespaceRequest) returns (Namespace);
+  rpc GetNamespace(GetNamespaceRequest) returns (Namespace);
+  rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse);
+  rpc DeleteNamespace(DeleteNamespaceRequest) returns (DeleteNamespaceResponse);
+}
+
+message CreateNamespaceRequest {
+  Namespace namespace = 1;
+}
+
+message GetNamespaceRequest {
+  string name = 1;
+}
+
+message ListNamespacesRequest {}
+
+message ListNamespacesResponse {
+  repeated Namespace items = 1;
+}
+
+message DeleteNamespaceRequest {
+  string name = 1;
+}
+
+message DeleteNamespaceResponse {}

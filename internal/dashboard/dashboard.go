@@ -29,6 +29,7 @@ type Config struct {
 	Pods          *registry.Registry[*v1.Pod]
 	DeploymentSvc v1.DeploymentServiceServer
 	Services      v1.ServiceServiceServer
+	Namespaces    v1.NamespaceServiceServer
 	GitOps        *gitops.Reconciler
 	CostModel     finops.CostModel
 	Username      string
@@ -52,6 +53,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("/api/cicd", cfg.handleCICD)
 	mux.HandleFunc("/api/metrics", cfg.handleMetrics)
 	mux.HandleFunc("/api/logs", cfg.handleLogs)
+	mux.HandleFunc("/api/namespaces", cfg.handleNamespaces)
 
 	if cfg.Password == "" {
 		return mux, nil
@@ -89,6 +91,54 @@ func (cfg Config) handlePods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeProto(w, &v1.ListPodsResponse{Items: items})
+}
+
+func (cfg Config) handleNamespaces(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		resp, err := cfg.Namespaces.ListNamespaces(r.Context(), &v1.ListNamespacesRequest{})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeProto(w, resp)
+
+	case http.MethodPost:
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		created, err := cfg.Namespaces.CreateNamespace(r.Context(), &v1.CreateNamespaceRequest{
+			Namespace: &v1.Namespace{Metadata: &v1.ObjectMeta{Name: req.Name}},
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeProto(w, created)
+
+	case http.MethodDelete:
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "name query parameter is required", http.StatusBadRequest)
+			return
+		}
+		if _, err := cfg.Namespaces.DeleteNamespace(r.Context(), &v1.DeleteNamespaceRequest{Name: name}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (cfg Config) handleLogs(w http.ResponseWriter, r *http.Request) {

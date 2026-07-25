@@ -868,3 +868,120 @@ footer {
   font-style: italic;
   padding: 2rem;
 }
+
+.project-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.project-switcher select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  max-width: 160px;
+}
+
+.view-toggle {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.canvas-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.create-menu-wrap {
+  position: relative;
+}
+
+.create-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: 300px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  padding: 0.4rem;
+  z-index: 120;
+}
+
+.create-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 0.55rem 0.6rem;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.create-menu-item:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.create-menu-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.create-menu-icon {
+  font-size: 1.1rem;
+  width: 1.4rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.create-menu-title {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.create-menu-desc {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.preset-item {
+  display: block;
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.preset-item:hover {
+  border-color: var(--blue);
+}
+
+.preset-item .preset-desc {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}

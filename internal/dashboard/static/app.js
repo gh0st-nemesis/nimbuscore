@@ -337,7 +337,7 @@ async function scaleDeployment(namespace, name, replicas) {
 
 async function refreshDeployments() {
   const data = await fetchJSON("/api/deployments");
-  const items = data.items || [];
+  const items = (data.items || []).filter((d) => (d.metadata?.namespace || "default") === currentNamespace);
   document.getElementById("deployments-count").textContent = items.length;
   setRows("deployments-table", items, 6, (d) => {
     const tr = document.createElement("tr");
@@ -648,7 +648,8 @@ function openDeploymentModal() {
   document.getElementById("env-vars-rows").innerHTML = "";
   setDeploymentSource("image");
   form.elements["name"].disabled = false;
-  form.elements["namespace"].disabled = false;
+  form.elements["namespace"].value = currentNamespace;
+  form.elements["namespace"].readOnly = true;
 
   modal.classList.add("open");
 }
@@ -658,7 +659,6 @@ function initDeploymentForm() {
   const form = document.getElementById("new-deployment-form");
   const errorEl = document.getElementById("deployment-form-error");
 
-  document.getElementById("new-deployment-btn").addEventListener("click", () => openDeploymentModal());
   document.getElementById("add-env-var-btn").addEventListener("click", () => addEnvVarRow());
   document.getElementById("cancel-deployment-btn").addEventListener("click", () => {
     modal.classList.remove("open");
@@ -812,84 +812,69 @@ async function refreshCanvas() {
     fetchJSON("/api/services"),
     fetchJSON("/api/pods"),
   ]);
-  const deployments = depData.items || [];
-  const services = svcData.items || [];
-  const pods = podData.items || [];
-
-  const groups = {};
-  const groupOf = (ns) => groups[ns] || (groups[ns] = { deployments: [], pods: [] });
-
-  for (const d of deployments) {
-    groupOf(d.metadata?.namespace || "default").deployments.push(d);
-  }
-  for (const p of pods) {
-    if (p.metadata?.labels?.["nimbuscore.io/owner-deployment"]) continue;
-    groupOf(p.metadata?.namespace || "default").pods.push(p);
-  }
+  const ns = currentNamespace;
+  const deployments = (depData.items || []).filter((d) => (d.metadata?.namespace || "default") === ns);
+  const services = (svcData.items || []).filter((s) => (s.metadata?.namespace || "default") === ns);
+  const pods = (podData.items || []).filter(
+    (p) => (p.metadata?.namespace || "default") === ns && !p.metadata?.labels?.["nimbuscore.io/owner-deployment"]
+  );
 
   const surface = document.getElementById("canvas-surface");
   surface.innerHTML = "";
 
-  const namespaces = Object.keys(groups).sort();
-  if (namespaces.length === 0) {
-    surface.appendChild(el("div", "canvas-empty", "No deployments yet — click + Create to add one."));
+  if (deployments.length === 0 && pods.length === 0) {
+    surface.appendChild(el("div", "canvas-empty", `No services in "${ns}" yet — click + Create to add one.`));
     applyCanvasTransform();
     return;
   }
 
-  for (const ns of namespaces) {
-    const group = groups[ns];
-    const groupEl = el("div", "canvas-group");
-    groupEl.appendChild(el("div", "canvas-group-title", ns));
-    const cardsEl = el("div", "canvas-group-cards");
+  const groupEl = el("div", "canvas-group");
+  groupEl.appendChild(el("div", "canvas-group-title", ns));
+  const cardsEl = el("div", "canvas-group-cards");
 
-    for (const d of group.deployments) {
-      const spec = d.spec || {};
-      const status = d.status || {};
-      const container = (spec.template?.containers || [])[0] || {};
-      const replicas = spec.replicas || 0;
-      const ready = status.readyReplicas || 0;
-      const podLabels = spec.selector || {};
+  for (const d of deployments) {
+    const spec = d.spec || {};
+    const status = d.status || {};
+    const container = (spec.template?.containers || [])[0] || {};
+    const replicas = spec.replicas || 0;
+    const ready = status.readyReplicas || 0;
+    const podLabels = spec.selector || {};
 
-      const card = el("div", "canvas-card");
-      const head = el("div", "canvas-card-head");
-      head.appendChild(el("span", "canvas-status-dot " + deploymentStatusClass(replicas, ready)));
-      head.appendChild(el("span", "canvas-card-name", d.metadata?.name || ""));
-      card.appendChild(head);
-      const image = container.image || (container.buildSource ? "git: " + container.buildSource.repoUrl : "—");
-      card.appendChild(el("div", "canvas-card-meta", image));
-      card.appendChild(el("div", "canvas-card-meta", `${ready} / ${replicas} ready`));
+    const card = el("div", "canvas-card");
+    const head = el("div", "canvas-card-head");
+    head.appendChild(el("span", "canvas-status-dot " + deploymentStatusClass(replicas, ready)));
+    head.appendChild(el("span", "canvas-card-name", d.metadata?.name || ""));
+    card.appendChild(head);
+    const image = container.image || (container.buildSource ? "git: " + container.buildSource.repoUrl : "—");
+    card.appendChild(el("div", "canvas-card-meta", image));
+    card.appendChild(el("div", "canvas-card-meta", `${ready} / ${replicas} ready`));
 
-      const matchingService = services.find(
-        (s) => (s.metadata?.namespace || "default") === ns && selectorMatches(s.spec?.selector, podLabels)
-      );
-      if (matchingService) {
-        const endpoints = matchingService.status?.endpoints || [];
-        const first = endpoints[0];
-        const text = first ? `${first.nodeIp}:${first.nodePort}` : `nodePort ${matchingService.spec?.nodePort ?? "?"}`;
-        card.appendChild(el("div", "canvas-card-service", "→ " + text));
-      }
-
-      card.addEventListener("click", () => openDeploymentPanel(d));
-      cardsEl.appendChild(card);
+    const matchingService = services.find((s) => selectorMatches(s.spec?.selector, podLabels));
+    if (matchingService) {
+      const endpoints = matchingService.status?.endpoints || [];
+      const first = endpoints[0];
+      const text = first ? `${first.nodeIp}:${first.nodePort}` : `nodePort ${matchingService.spec?.nodePort ?? "?"}`;
+      card.appendChild(el("div", "canvas-card-service", "→ " + text));
     }
 
-    for (const p of group.pods) {
-      const status = p.status || {};
-      const card = el("div", "canvas-card");
-      const head = el("div", "canvas-card-head");
-      head.appendChild(el("span", "canvas-status-dot " + phaseKind(status.phase)));
-      head.appendChild(el("span", "canvas-card-name", p.metadata?.name || ""));
-      card.appendChild(head);
-      card.appendChild(el("div", "canvas-card-meta", "standalone pod"));
-      card.appendChild(el("div", "canvas-card-meta", (status.phase || "").replace("POD_PHASE_", "")));
-      cardsEl.appendChild(card);
-    }
-
-    groupEl.appendChild(cardsEl);
-    surface.appendChild(groupEl);
+    card.addEventListener("click", () => openDeploymentPanel(d));
+    cardsEl.appendChild(card);
   }
 
+  for (const p of pods) {
+    const status = p.status || {};
+    const card = el("div", "canvas-card");
+    const head = el("div", "canvas-card-head");
+    head.appendChild(el("span", "canvas-status-dot " + phaseKind(status.phase)));
+    head.appendChild(el("span", "canvas-card-name", p.metadata?.name || ""));
+    card.appendChild(head);
+    card.appendChild(el("div", "canvas-card-meta", "standalone pod"));
+    card.appendChild(el("div", "canvas-card-meta", (status.phase || "").replace("POD_PHASE_", "")));
+    cardsEl.appendChild(card);
+  }
+
+  groupEl.appendChild(cardsEl);
+  surface.appendChild(groupEl);
   applyCanvasTransform();
 }
 
@@ -910,8 +895,6 @@ function initCanvas() {
     canvasOffsetY = 0;
     applyCanvasTransform();
   });
-  document.getElementById("new-deployment-btn-canvas").addEventListener("click", () => openDeploymentModal());
-
   let dragging = false;
   let lastX = 0;
   let lastY = 0;
@@ -946,12 +929,194 @@ function initCanvas() {
   );
 }
 
+let currentNamespace = localStorage.getItem("nimbus-current-namespace") || "default";
+
+async function refreshNamespaces() {
+  const [nsData, depData, podData] = await Promise.all([
+    fetchJSON("/api/namespaces"),
+    fetchJSON("/api/deployments"),
+    fetchJSON("/api/pods"),
+  ]);
+  const known = new Set((nsData.items || []).map((n) => n.metadata?.name).filter(Boolean));
+  for (const d of depData.items || []) known.add(d.metadata?.namespace || "default");
+  for (const p of podData.items || []) known.add(p.metadata?.namespace || "default");
+  known.add("default");
+
+  const names = Array.from(known).sort();
+  if (!names.includes(currentNamespace)) currentNamespace = names[0];
+  localStorage.setItem("nimbus-current-namespace", currentNamespace);
+
+  const select = document.getElementById("project-select");
+  select.innerHTML = "";
+  for (const name of names) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    opt.selected = name === currentNamespace;
+    select.appendChild(opt);
+  }
+}
+
+async function switchProject(name) {
+  currentNamespace = name;
+  localStorage.setItem("nimbus-current-namespace", name);
+  await Promise.allSettled([refreshCanvas(), refreshDeployments(), refreshCICD()]);
+}
+
+function initProjectSwitcher() {
+  document.getElementById("project-select").addEventListener("change", (ev) => switchProject(ev.target.value));
+  document.getElementById("new-project-btn").addEventListener("click", () => {
+    const modal = document.getElementById("new-project-modal");
+    document.getElementById("project-form-error").textContent = "";
+    document.getElementById("new-project-form").reset();
+    modal.classList.add("open");
+  });
+  document.getElementById("cancel-project-btn").addEventListener("click", () => {
+    document.getElementById("new-project-modal").classList.remove("open");
+  });
+  document.getElementById("new-project-modal").addEventListener("click", (ev) => {
+    if (ev.target.id === "new-project-modal") ev.target.classList.remove("open");
+  });
+  document.getElementById("new-project-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const errorEl = document.getElementById("project-form-error");
+    errorEl.textContent = "";
+    const name = new FormData(ev.target).get("name")?.toString().trim();
+    if (!name) {
+      errorEl.textContent = "Name is required";
+      return;
+    }
+    try {
+      await fetchJSON("/api/namespaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      document.getElementById("new-project-modal").classList.remove("open");
+      await refreshNamespaces();
+      await switchProject(name);
+      showToast(`Project "${name}" created.`);
+    } catch (err) {
+      errorEl.textContent = err.message || String(err);
+    }
+  });
+}
+
+function setDeploymentsView(view) {
+  document.querySelectorAll("#tab-deployments .view-toggle .tab-toggle").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.view === view);
+  });
+  document.getElementById("canvas-viewport").classList.toggle("hidden", view !== "canvas");
+  document.querySelector("#tab-deployments .canvas-zoom-controls").classList.toggle("hidden", view !== "canvas");
+  document.getElementById("deployments-table-view").classList.toggle("hidden", view !== "table");
+}
+
+function initViewToggle() {
+  document.querySelectorAll("#tab-deployments .view-toggle .tab-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => setDeploymentsView(btn.dataset.view));
+  });
+}
+
+const DATABASE_PRESETS = [
+  { name: "Postgres", desc: "postgres:16-alpine, port 5432", image: "postgres:16-alpine", port: 5432, env: { POSTGRES_PASSWORD: "changeme" } },
+  { name: "Redis", desc: "redis:7-alpine, port 6379", image: "redis:7-alpine", port: 6379, env: {} },
+  { name: "MySQL", desc: "mysql:8, port 3306", image: "mysql:8", port: 3306, env: { MYSQL_ROOT_PASSWORD: "changeme" } },
+  { name: "MongoDB", desc: "mongo:7, port 27017", image: "mongo:7", port: 27017, env: {} },
+];
+
+const TEMPLATE_PRESETS = [
+  { name: "Nginx web server", desc: "nginx:alpine, port 80", image: "nginx:alpine", port: 80, command: [] },
+  {
+    name: "Node.js hello world",
+    desc: "node:21-alpine, port 3000, inline server",
+    image: "node:21-alpine",
+    port: 3000,
+    command: ["node", "-e", "require('http').createServer((_,r)=>r.end('hello from NimbusCore')).listen(3000)"],
+  },
+  { name: "Static file server", desc: "nginx:alpine, port 80", image: "nginx:alpine", port: 80, command: [] },
+];
+
+function applyPresetToModal(preset) {
+  openDeploymentModal();
+  const form = document.getElementById("new-deployment-form");
+  setDeploymentSource("image");
+  form.elements["image"].value = preset.image;
+  form.elements["port"].value = preset.port || "";
+  if (preset.command) form.elements["command"].value = preset.command.join(" ");
+  document.getElementById("env-vars-rows").innerHTML = "";
+  for (const [k, v] of Object.entries(preset.env || {})) addEnvVarRow(k, v);
+}
+
+function openPresetModal(kind) {
+  const presets = kind === "database" ? DATABASE_PRESETS : TEMPLATE_PRESETS;
+  document.getElementById("preset-modal-title").textContent = kind === "database" ? "Choose a database" : "Choose a template";
+  const list = document.getElementById("preset-list");
+  list.innerHTML = "";
+  for (const preset of presets) {
+    const btn = el("button", "preset-item", preset.name);
+    btn.type = "button";
+    const desc = el("span", "preset-desc", preset.desc);
+    btn.appendChild(desc);
+    btn.addEventListener("click", () => {
+      document.getElementById("preset-modal").classList.remove("open");
+      applyPresetToModal(preset);
+    });
+    list.appendChild(btn);
+  }
+  document.getElementById("preset-modal").classList.add("open");
+}
+
+function initPresetModal() {
+  document.getElementById("cancel-preset-btn").addEventListener("click", () => {
+    document.getElementById("preset-modal").classList.remove("open");
+  });
+  document.getElementById("preset-modal").addEventListener("click", (ev) => {
+    if (ev.target.id === "preset-modal") ev.target.classList.remove("open");
+  });
+}
+
+function initCreateMenu() {
+  const menu = document.getElementById("create-menu");
+  const btn = document.getElementById("create-menu-btn");
+  btn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    menu.classList.toggle("hidden");
+  });
+  document.addEventListener("click", () => menu.classList.add("hidden"));
+  menu.addEventListener("click", (ev) => ev.stopPropagation());
+
+  document.querySelectorAll(".create-menu-item[data-create]").forEach((item) => {
+    item.addEventListener("click", () => {
+      menu.classList.add("hidden");
+      const kind = item.dataset.create;
+      if (kind === "image") {
+        openDeploymentModal();
+        setDeploymentSource("image");
+      } else if (kind === "git") {
+        openDeploymentModal();
+        setDeploymentSource("git");
+      } else if (kind === "database") {
+        openPresetModal("database");
+      } else if (kind === "template") {
+        openPresetModal("template");
+      } else if (kind === "empty") {
+        openDeploymentModal();
+        const form = document.getElementById("new-deployment-form");
+        setDeploymentSource("image");
+        form.elements["image"].value = "alpine";
+        form.elements["command"].value = "sleep 3600";
+      }
+    });
+  });
+}
+
 function updateClock() {
   document.getElementById("clock").textContent = new Date().toLocaleString();
 }
 
 async function refreshAll() {
   updateClock();
+  await refreshNamespaces();
   await Promise.allSettled([
     refreshNodes(),
     refreshPods(),
@@ -969,6 +1134,11 @@ initDeploymentForm();
 initLogsModal();
 initDeploymentPanel();
 initCanvas();
+initProjectSwitcher();
+initViewToggle();
+initPresetModal();
+initCreateMenu();
+setDeploymentsView("canvas");
 refreshAll();
 setInterval(refreshAll, 5000);
 setInterval(updateClock, 1000);

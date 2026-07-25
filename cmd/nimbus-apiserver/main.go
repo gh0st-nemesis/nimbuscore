@@ -176,6 +176,8 @@ func main() {
 	v1.RegisterNetworkPolicyServiceServer(srv.GRPCServer(), apiserver.NewNetworkPolicyService(raftStore))
 	serviceSvc := apiserver.NewServiceService(raftStore)
 	v1.RegisterServiceServiceServer(srv.GRPCServer(), serviceSvc)
+	namespaceSvc := apiserver.NewNamespaceService(raftStore)
+	v1.RegisterNamespaceServiceServer(srv.GRPCServer(), namespaceSvc)
 	v1.RegisterPolicyServiceServer(srv.GRPCServer(), apiserver.NewPolicyService(raftStore, policyEngine))
 	v1.RegisterSecretServiceServer(srv.GRPCServer(), apiserver.NewSecretService(raftStore))
 	v1.RegisterBackupServiceServer(srv.GRPCServer(), apiserver.NewBackupService(raftStore))
@@ -211,6 +213,7 @@ func main() {
 		Pods:          pods,
 		DeploymentSvc: deploymentSvc,
 		Services:      serviceSvc,
+		Namespaces:    namespaceSvc,
 		GitOps:        gitOpsReconciler,
 		CostModel:     finops.CostModel{CPUCoreHour: *costCPUCoreHour, MemoryGBHour: *costMemoryGBHour},
 		Username:      *dashboardUsername,
