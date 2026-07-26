@@ -301,9 +301,13 @@ async function refreshPods() {
     tr.appendChild(el("td", null, spec.nodeName || "—"));
     tr.appendChild(el("td", null, String(status.restartCount || 0)));
     const actionsTd = document.createElement("td");
+    actionsTd.className = "row-actions";
     const logsBtn = el("button", "btn-ghost btn-small", "Logs");
     logsBtn.addEventListener("click", () => openLogsModal(namespace, name));
     actionsTd.appendChild(logsBtn);
+    const deleteBtn = el("button", "btn-ghost btn-small danger", "Delete");
+    deleteBtn.addEventListener("click", () => deletePod(namespace, name));
+    actionsTd.appendChild(deleteBtn);
     tr.appendChild(actionsTd);
     return tr;
   });
@@ -315,6 +319,15 @@ async function deleteService(namespace, name) {
     method: "DELETE",
   });
   await refreshServices();
+}
+
+async function deletePod(namespace, name) {
+  if (!confirm(`Delete pod ${namespace}/${name}? If it belongs to a deployment, it will be recreated automatically.`)) return;
+  await fetchJSON(`/api/pods?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  await refreshPods();
+  showToast(`Pod ${name} deleted.`);
 }
 
 async function refreshServices() {

@@ -794,6 +794,53 @@ func TestDashboardCreateDeploymentDoesNotRestartUnrelatedPods(t *testing.T) {
 	}
 }
 
+func TestDashboardDeletePodRemovesIt(t *testing.T) {
+	handler, pods, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	if err := pods.Put(t.Context(), "default", "standalone", &v1.Pod{
+		Metadata: &v1.ObjectMeta{Name: "standalone", Namespace: "default"},
+		Spec:     &v1.PodSpec{Containers: []*v1.Container{{Name: "standalone", Image: "alpine"}}},
+	}); err != nil {
+		t.Fatalf("seed pod: %v", err)
+	}
+
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/pods?namespace=default&name=standalone", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE /api/pods: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+
+	remaining, err := pods.List(t.Context(), "default")
+	if err != nil {
+		t.Fatalf("list pods: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Errorf("pods = %+v, want none remaining", remaining)
+	}
+}
+
+func TestDashboardDeletePodRequiresName(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/pods?namespace=default", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE /api/pods: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
 func TestDashboardDeleteDeploymentRemovesIt(t *testing.T) {
 	handler, _, _ := newTestHandler(t)
 	srv := httptest.NewServer(handler)

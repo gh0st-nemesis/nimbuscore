@@ -87,12 +87,38 @@ func (cfg Config) handleNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg Config) handlePods(w http.ResponseWriter, r *http.Request) {
-	items, err := cfg.Pods.List(r.Context(), "")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	switch r.Method {
+	case http.MethodGet:
+		items, err := cfg.Pods.List(r.Context(), "")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeProto(w, &v1.ListPodsResponse{Items: items})
+
+	case http.MethodDelete:
+		namespace := r.URL.Query().Get("namespace")
+		if namespace == "" {
+			namespace = "default"
+		}
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "name query parameter is required", http.StatusBadRequest)
+			return
+		}
+		// Deleting a pod that belongs to a Deployment is expected to be a
+		// transient action — the deployment reconciler notices the replica
+		// shortfall on its next tick and recreates it to restore the desired
+		// replica count. Deleting a standalone pod just deletes it.
+		if err := cfg.Pods.Delete(r.Context(), namespace, name); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-	writeProto(w, &v1.ListPodsResponse{Items: items})
 }
 
 func (cfg Config) handleNamespaces(w http.ResponseWriter, r *http.Request) {
