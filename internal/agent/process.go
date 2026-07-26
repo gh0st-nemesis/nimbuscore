@@ -6,13 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/shirou/gopsutil/v3/process"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/tetratelabs/wazero"
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
@@ -116,24 +114,6 @@ func (r *processRuntime) memoryUsageBytes(key string) int64 {
 	return int64(info.RSS)
 }
 
-func containerdTaskPID(containerID string) (int32, error) {
-	out, err := exec.Command("ctr", "task", "ls").Output()
-	if err != nil {
-		return 0, err
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[0] == containerID {
-			pid, err := strconv.Atoi(fields[1])
-			if err != nil {
-				return 0, err
-			}
-			return int32(pid), nil
-		}
-	}
-	return 0, fmt.Errorf("agent: task %s not found in ctr task ls", containerID)
-}
-
 func firstContainer(pod *v1.Pod) *v1.Container {
 	containers := pod.GetSpec().GetContainers()
 	if len(containers) == 0 {
@@ -160,24 +140,6 @@ func containerName(pod *v1.Pod) string {
 
 func containerNameRaw(namespace, name string) string {
 	return fmt.Sprintf("nimbus-%s-%s", namespace, name)
-}
-
-func removeContainerdContainer(id string) {
-	for i := 0; i < 30; i++ {
-		if exec.Command("ctr", "task", "kill", "-s", "SIGKILL", id).Run() == nil {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	for i := 0; i < 30; i++ {
-		out, err := exec.Command("ctr", "task", "ls").Output()
-		if err == nil && !strings.Contains(string(out), id) {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	exec.Command("ctr", "task", "rm", id).Run()      //nolint:errcheck
-	exec.Command("ctr", "container", "rm", id).Run() //nolint:errcheck
 }
 
 func resolveImageRef(ref string) string {
@@ -234,7 +196,9 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 
 	removeContainerdContainer(id)
 
-	var image string
+	ctx := context.Background()
+
+	var imageRef string
 	if src := c.GetBuildSource(); src != nil {
 		buildDir := r.buildDir
 		if buildDir == "" {
@@ -244,46 +208,32 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 		if buildkitAddr == "" {
 			buildkitAddr = "unix:///run/buildkit/buildkitd.sock"
 		}
-		built, err := buildImageFromSource(context.Background(), buildkitAddr, filepath.Join(buildDir, id), r.logDir, id, src)
+		built, err := buildImageFromSource(ctx, buildkitAddr, filepath.Join(buildDir, id), r.logDir, id, src)
 		if err != nil {
 			return err
 		}
-		image = built
+		imageRef = built
 	} else {
-		image = resolveImageRef(c.GetImage())
-		if out, err := exec.Command("ctr", "images", "pull", image).CombinedOutput(); err != nil {
-			return fmt.Errorf("agent: ctr images pull %s: %w: %s", image, err, strings.TrimSpace(string(out)))
-		}
+		imageRef = resolveImageRef(c.GetImage())
+	}
+	image, err := pullContainerdImage(ctx, imageRef)
+	if err != nil {
+		return err
 	}
 
-	args := []string{"run", "-d", "--net-host"}
+	var logPath string
 	if r.logDir != "" {
 		if err := os.MkdirAll(r.logDir, 0o755); err != nil {
 			return fmt.Errorf("agent: create log dir %s: %w", r.logDir, err)
 		}
-		logPath, err := filepath.Abs(logFilePath(r.logDir, id))
+		logPath, err = filepath.Abs(logFilePath(r.logDir, id))
 		if err != nil {
 			return fmt.Errorf("agent: resolve log path: %w", err)
 		}
 		os.Remove(logPath) //nolint:errcheck
-		args = append(args, "--log-uri", "file://"+logPath)
 	}
-	if limits := c.GetResources().GetLimits(); limits != nil {
-		if millis := limits.GetCpuMillis(); millis > 0 {
-			args = append(args, "--cpus", fmt.Sprintf("%.3f", float64(millis)/1000))
-		}
-		if mem := limits.GetMemoryBytes(); mem > 0 {
-			args = append(args, "--memory-limit", strconv.FormatInt(mem, 10))
-		}
-	}
-	envKeys := make([]string, 0, len(c.GetEnv()))
-	for k := range c.GetEnv() {
-		envKeys = append(envKeys, k)
-	}
-	sort.Strings(envKeys)
-	for _, k := range envKeys {
-		args = append(args, "--env", k+"="+c.GetEnv()[k])
-	}
+
+	var mounts []specs.Mount
 	if r.volumesDir != "" {
 		for _, m := range pod.GetSpec().GetVolumes() {
 			volDir, err := r.ensureVolumeDir(pod.GetMetadata().GetNamespace(), m.GetVolumeName())
@@ -294,14 +244,27 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 			if m.GetReadOnly() {
 				mode = "ro"
 			}
-			args = append(args, "--mount", fmt.Sprintf("type=bind,src=%s,dst=%s,options=rbind:%s", volDir, m.GetMountPath(), mode))
+			mounts = append(mounts, specs.Mount{
+				Type:        "bind",
+				Source:      volDir,
+				Destination: m.GetMountPath(),
+				Options:     []string{"rbind", mode},
+			})
 		}
 	}
-	args = append(args, image, id)
-	args = append(args, c.GetCommand()...)
 
-	if out, err := exec.Command("ctr", args...).CombinedOutput(); err != nil {
-		return fmt.Errorf("agent: ctr run %s: %w: %s", image, err, strings.TrimSpace(string(out)))
+	limits := c.GetResources().GetLimits()
+	if err := runContainerdContainer(ctx, containerdRunSpec{
+		id:        id,
+		image:     image,
+		command:   c.GetCommand(),
+		env:       c.GetEnv(),
+		cpuMillis: limits.GetCpuMillis(),
+		memBytes:  limits.GetMemoryBytes(),
+		mounts:    mounts,
+		logPath:   logPath,
+	}); err != nil {
+		return err
 	}
 
 	r.mu.Lock()
@@ -314,22 +277,6 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 	return nil
 }
 
-func listContainerdTaskStatuses() (map[string]string, error) {
-	out, err := exec.Command("ctr", "task", "ls").Output()
-	if err != nil {
-		return nil, err
-	}
-	statuses := make(map[string]string)
-	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 3 || fields[0] == "TASK" {
-			continue
-		}
-		statuses[fields[0]] = fields[2]
-	}
-	return statuses, nil
-}
-
 func (r *processRuntime) adoptIfRunning(pod *v1.Pod) bool {
 	c := firstContainer(pod)
 	if c.GetImage() == "" && c.GetBuildSource() == nil {
@@ -337,7 +284,7 @@ func (r *processRuntime) adoptIfRunning(pod *v1.Pod) bool {
 	}
 	id := containerName(pod)
 	statuses, err := listContainerdTaskStatuses()
-	if err != nil || statuses[id] != "RUNNING" {
+	if err != nil || !statuses[id] {
 		return false
 	}
 
@@ -360,7 +307,7 @@ func (r *processRuntime) checkContainerdExits() {
 		if tp.containerID == "" {
 			continue
 		}
-		if statuses[tp.containerID] == "RUNNING" {
+		if statuses[tp.containerID] {
 			continue
 		}
 		exits = append(exits, exitEvent{key: key, exitCode: -1})

@@ -134,7 +134,7 @@ func TestContainerdRuntimeStartsPodFromGitBuildSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listContainerdTaskStatuses: %v", err)
 	}
-	if statuses[id] != "RUNNING" {
-		t.Errorf("task %s status = %q, want RUNNING", id, statuses[id])
+	if !statuses[id] {
+		t.Errorf("task %s status = %v, want running", id, statuses[id])
 	}
 }
