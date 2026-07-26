@@ -73,6 +73,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	mux.Handle("/style.css", fileServer)
 	mux.Handle("/logo.png", fileServer)
 	mux.Handle("/login.js", fileServer)
+	mux.Handle("/particles.js", fileServer)
 	mux.Handle("/", sess.requireSession(appMux))
 	return mux, nil
 }
