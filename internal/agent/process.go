@@ -9,8 +9,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/shirou/gopsutil/v3/process"
+	containerd "github.com/containerd/containerd/v2/client"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/shirou/gopsutil/v3/process"
 	"github.com/tetratelabs/wazero"
 
 	v1 "github.com/gh0st-nemesis/nimbuscore/api/v1"
@@ -198,7 +199,7 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 
 	ctx := context.Background()
 
-	var imageRef string
+	var image containerd.Image
 	if src := c.GetBuildSource(); src != nil {
 		buildDir := r.buildDir
 		if buildDir == "" {
@@ -212,13 +213,18 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 		if err != nil {
 			return err
 		}
-		imageRef = built
+		// buildctl already exported this image straight into containerd's
+		// store (type=image,unpack=true) — it has no registry to pull from.
+		image, err = localContainerdImage(ctx, built)
+		if err != nil {
+			return err
+		}
 	} else {
-		imageRef = resolveImageRef(c.GetImage())
-	}
-	image, err := pullContainerdImage(ctx, imageRef)
-	if err != nil {
-		return err
+		pulled, err := pullContainerdImage(ctx, resolveImageRef(c.GetImage()))
+		if err != nil {
+			return err
+		}
+		image = pulled
 	}
 
 	var logPath string
@@ -226,10 +232,11 @@ func (r *processRuntime) startContainerd(pod *v1.Pod) error {
 		if err := os.MkdirAll(r.logDir, 0o755); err != nil {
 			return fmt.Errorf("agent: create log dir %s: %w", r.logDir, err)
 		}
-		logPath, err = filepath.Abs(logFilePath(r.logDir, id))
+		abs, err := filepath.Abs(logFilePath(r.logDir, id))
 		if err != nil {
 			return fmt.Errorf("agent: resolve log path: %w", err)
 		}
+		logPath = abs
 		os.Remove(logPath) //nolint:errcheck
 	}
 

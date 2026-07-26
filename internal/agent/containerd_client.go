@@ -60,6 +60,22 @@ func pullContainerdImage(ctx context.Context, ref string) (containerd.Image, err
 	return image, nil
 }
 
+// localContainerdImage looks up an image already present in containerd's
+// image store, without attempting a registry pull. Used for images buildctl
+// just exported directly into containerd (buildImageFromSource's
+// type=image,unpack=true output), which have no matching remote to pull from.
+func localContainerdImage(ctx context.Context, ref string) (containerd.Image, error) {
+	cclient, err := containerdClient()
+	if err != nil {
+		return nil, err
+	}
+	image, err := cclient.GetImage(ctx, ref)
+	if err != nil {
+		return nil, fmt.Errorf("agent: look up built image %s: %w", ref, err)
+	}
+	return image, nil
+}
+
 // containerdRunSpec describes a container run request, mirroring the ctr CLI
 // flags the agent used to shell out with (-d --net-host --log-uri --cpus
 // --memory-limit --env --mount).
