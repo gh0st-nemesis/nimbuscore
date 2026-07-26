@@ -32,9 +32,10 @@ terminal interactif (script, CI, install à distance non-interactive), aucun rô
 aucun service n'est activé tant que tu n'as pas relancé `sudo dpkg-reconfigure nimbuscore` ou activé
 le bon toi-même.
 
-> `nimbus-agent` tourne en root sur les nœuds `worker` (comme un vrai kubelet) : démarrer un
-> conteneur via le client `ctr` de containerd implique des opérations de montage overlay qui
-> demandent `CAP_SYS_ADMIN`+`CAP_DAC_OVERRIDE` — en pratique proche de root de toute façon.
+> `nimbus-agent` tourne en root sur les nœuds `worker` (comme un vrai kubelet) : il pilote
+> containerd directement via son client Go officiel (pas de binaire `ctr` shell-outé), et
+> démarrer un conteneur implique des opérations de montage overlay qui demandent
+> `CAP_SYS_ADMIN`+`CAP_DAC_OVERRIDE` — en pratique proche de root de toute façon.
 > `nimbus-apiserver`, lui, tourne sous un utilisateur système dédié non-root (`nimbuscore`).
 
 ## Démarrer un cluster
@@ -64,6 +65,49 @@ Configurer le client :
 nimbusctl config set-context --control-plane-addr=<ip-du-control-plane>:7443 --join-token=<ton-token>
 nimbusctl get nodes
 ```
+
+## Déployer depuis un repo Git
+
+Le dashboard peut construire et déployer directement depuis un repo Git — **pas besoin de
+Dockerfile** : si le repo n'en a pas, la techno est détectée automatiquement (`package.json` →
+Node.js, sinon `index.html` → site statique servi par nginx). Pour les apps Node.js qui déclarent un
+script `"build"` (Next.js, Vite, Create React App, ...), ce build est exécuté avant le démarrage —
+avec les devDependencies installées le temps du build, puis retirées de l'image finale. Les autres
+stacks échouent avec un message clair plutôt que de déployer silencieusement un conteneur cassé.
+
+### Connexion GitHub
+
+Pour éviter de coller l'URL du repo à chaque déploiement, une connexion **GitHub OAuth** optionnelle
+permet de choisir le repo (public ou privé) dans une liste, directement dans le formulaire de
+déploiement :
+
+1. Créer une OAuth App sur `github.com/settings/developers`, avec pour callback URL
+   `http://<ip-du-control-plane>:8080/auth/github/callback`.
+2. Ajouter les identifiants à `/etc/nimbuscore/apiserver.env`, à la suite de
+   `NIMBUS_APISERVER_ARGS` :
+   ```
+   -github-oauth-client-id=<client-id> -github-oauth-client-secret=<client-secret>
+   ```
+3. `sudo systemctl restart nimbus-apiserver`, puis bouton **Connect GitHub** dans le formulaire
+   « Deploy from Git repo ».
+
+Une fois connecté, le token GitHub stocké sert aussi à cloner automatiquement les repos privés
+choisis dans la liste (pas besoin de coller un token à la main). Sans cette configuration, la
+fonctionnalité reste simplement invisible et l'URL du repo se saisit à la main (comportement par
+défaut, aucune app GitHub requise) — les repos publics se clonent alors sans authentification.
+
+## Stockage persistant
+
+Un déploiement peut monter un volume persistant (namespace + nom réutilisés comme identifiant), à
+cocher dans le formulaire de déploiement du dashboard avec un chemin de montage (ex.
+`/usr/share/nginx/html`). Les déploiements avec stockage persistant sont limités à **1 réplica**
+(le volume vit sur un seul nœud). Le contenu est éditable directement depuis l'onglet **Files** du
+dashboard (lecture/écriture/suppression de fichiers), sans redéployer le conteneur.
+
+> Éditer un déploiement existant (image, commande, variables d'env, repo Git...) depuis le panneau
+> du dashboard préserve automatiquement son stockage persistant s'il en a un — le formulaire
+> d'édition n'a pas de case à cocher dédiée, donc omettre ce champ ne doit jamais être compris comme
+> « retire le volume ».
 
 ## Exemple
 
