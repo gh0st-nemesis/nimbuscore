@@ -880,6 +880,29 @@ function initDeploymentForm() {
   document.getElementById("persistent-storage-checkbox").addEventListener("change", (ev) => {
     document.getElementById("mount-path-field").classList.toggle("hidden", !ev.target.checked);
   });
+  form.elements["image"].addEventListener("input", (ev) => {
+    const image = ev.target.value.toLowerCase();
+    const checkbox = document.getElementById("persistent-storage-checkbox");
+    if (checkbox.checked) return; // don't fight a choice the user already made
+
+    let mountPath = "";
+    let command = "";
+    if (image.includes("nginx")) {
+      mountPath = "/usr/share/nginx/html";
+    } else if (image.includes("node")) {
+      mountPath = "/app";
+      command = "node /app/index.js";
+    }
+    if (!mountPath) return;
+
+    checkbox.checked = true;
+    document.getElementById("mount-path-field").classList.remove("hidden");
+    if (!form.elements["mountPath"].value) form.elements["mountPath"].value = mountPath;
+    if (command && !form.elements["command"].value) {
+      form.elements["command"].value = command;
+      showToast(`Persistent storage enabled at ${mountPath}, and the command was set to run ${command.split(" ").pop()} from it — edit it via the Files tab after creating.`);
+    }
+  });
   document.getElementById("link-service-btn").addEventListener("click", () => {
     const name = document.getElementById("link-service-select").value;
     if (!name) return;
