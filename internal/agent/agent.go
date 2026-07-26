@@ -154,6 +154,13 @@ func (a *Agent) handleExit(ctx context.Context, ev exitEvent) {
 	if pod == nil {
 		return
 	}
+	if a.runtime.stillRunning(ev.key) {
+		// Stale event: queued while the single-threaded reconcile loop was
+		// busy elsewhere (e.g. rebuilding a different pod's image), and no
+		// longer reflects reality now that we're getting around to it.
+		log.Printf("agent: ignoring stale exit event for pod %s (task is still running)", ev.key)
+		return
+	}
 
 	restartPolicy := pod.GetSpec().GetRestartPolicy()
 	shouldRestart := restartPolicy == v1.RestartPolicy_RESTART_POLICY_UNSPECIFIED ||

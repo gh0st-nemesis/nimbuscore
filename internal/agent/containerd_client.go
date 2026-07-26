@@ -23,11 +23,19 @@ import (
 const containerdNamespace = "default"
 
 // containerdCallTimeout bounds the housekeeping calls (task listing, PID
-// lookup, container removal) that the reconcile loop makes on every tick
-// regardless of whether any pod actually uses containerd. Without a bound, a
-// missing or unreachable daemon would stall the whole reconcile loop for as
-// long as gRPC's connection backoff allows.
+// lookup) that the reconcile loop makes on every tick regardless of whether
+// any pod actually uses containerd. Without a bound, a missing or
+// unreachable daemon would stall the whole reconcile loop for as long as
+// gRPC's connection backoff allows.
 const containerdCallTimeout = 2 * time.Second
+
+// containerdTeardownTimeout bounds container removal: killing a real running
+// process and unmounting its overlay snapshot can legitimately take longer
+// than containerdCallTimeout under load (e.g. a concurrent buildkit build
+// hammering the same daemon). Cutting that short used to leave the old
+// process's port not yet released by the time the restarted container tried
+// to bind it, producing a spurious EADDRINUSE crash loop.
+const containerdTeardownTimeout = 30 * time.Second
 
 var (
 	cdClientOnce sync.Once
@@ -172,7 +180,7 @@ func removeContainerdContainer(id string) {
 	if err != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), containerdCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), containerdTeardownTimeout)
 	defer cancel()
 
 	c, err := cclient.LoadContainer(ctx, id)
@@ -207,7 +215,7 @@ func containerdTaskPID(containerID string) (int32, error) {
 		return 0, err
 	}
 	for _, p := range procs {
-		if p.ContainerID == containerID {
+		if p.ID == containerID {
 			return int32(p.Pid), nil
 		}
 	}
@@ -225,7 +233,7 @@ func listContainerdTaskStatuses() (map[string]bool, error) {
 	}
 	running := make(map[string]bool, len(procs))
 	for _, p := range procs {
-		running[p.ContainerID] = p.Status == taskapi.Status_RUNNING
+		running[p.ID] = p.Status == taskapi.Status_RUNNING
 	}
 	return running, nil
 }

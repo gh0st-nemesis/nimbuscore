@@ -32,21 +32,31 @@ type trackedProcess struct {
 }
 
 type processRuntime struct {
-	mu           sync.Mutex
-	procs        map[string]*trackedProcess
-	exited       chan exitEvent
-	logDir       string
-	buildDir     string
-	buildkitAddr string
-	volumesDir   string
+	mu             sync.Mutex
+	procs          map[string]*trackedProcess
+	exited         chan exitEvent
+	logDir         string
+	buildDir       string
+	buildkitAddr   string
+	volumesDir     string
+	missingStreaks map[string]int
 }
 
 func newProcessRuntime() *processRuntime {
 	return &processRuntime{
-		procs:  make(map[string]*trackedProcess),
-		exited: make(chan exitEvent, 32),
+		procs:          make(map[string]*trackedProcess),
+		exited:         make(chan exitEvent, 32),
+		missingStreaks: make(map[string]int),
 	}
 }
+
+// containerdMissingConfirmations is how many consecutive reconcile ticks a
+// containerd task must be absent from TaskService().List() before the agent
+// treats it as exited. A lone daemon-side hiccup (observed in practice: the
+// list response is occasionally missing entries for one tick and correct
+// again on the very next one) would otherwise be indistinguishable from a
+// real crash and trigger a needless rebuild-and-restart cycle.
+const containerdMissingConfirmations = 3
 
 func podKey(pod *v1.Pod) string {
 	return pod.GetMetadata().GetNamespace() + "/" + pod.GetMetadata().GetName()
@@ -315,8 +325,14 @@ func (r *processRuntime) checkContainerdExits() {
 			continue
 		}
 		if statuses[tp.containerID] {
+			delete(r.missingStreaks, key)
 			continue
 		}
+		r.missingStreaks[key]++
+		if r.missingStreaks[key] < containerdMissingConfirmations {
+			continue
+		}
+		delete(r.missingStreaks, key)
 		exits = append(exits, exitEvent{key: key, exitCode: -1})
 	}
 	r.mu.Unlock()
@@ -324,6 +340,26 @@ func (r *processRuntime) checkContainerdExits() {
 	for _, ev := range exits {
 		r.exited <- ev
 	}
+}
+
+// stillRunning reports whether key's containerd task is currently running.
+// The reconcile loop is single-threaded: while it's busy handling a slow
+// build for one pod (tens of seconds), exit events queued for other pods
+// can go stale — by the time the loop gets back to them, the task may
+// already have been restarted through some other path. Always false for
+// non-containerd pods (empty containerID), so it never affects them.
+func (r *processRuntime) stillRunning(key string) bool {
+	r.mu.Lock()
+	tp, ok := r.procs[key]
+	r.mu.Unlock()
+	if !ok || tp.containerID == "" {
+		return false
+	}
+	statuses, err := listContainerdTaskStatuses()
+	if err != nil {
+		return false
+	}
+	return statuses[tp.containerID]
 }
 
 func (r *processRuntime) startProcess(pod *v1.Pod) error {
