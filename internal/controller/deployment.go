@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -96,7 +98,24 @@ func (r *DeploymentReconciler) reconcileOne(ctx context.Context, d *v1.Deploymen
 			}
 			claimedNode = node
 		}
-		for i := have; i < want; i++ {
+		// Fill the first free ordinal indices rather than starting from
+		// len(owned): if a non-last replica was deleted (e.g. pod -1 out of
+		// -0/-1/-2), len(owned) is still 2, and using that as the next index
+		// would generate "-2" again — colliding with (and silently
+		// overwriting, since Put is an upsert) the pod that's still there,
+		// leaving the actual gap at "-1" unfilled forever.
+		occupied := make(map[int]bool, len(owned))
+		prefix := d.GetMetadata().GetName() + "-"
+		for _, p := range owned {
+			if idx, err := strconv.Atoi(strings.TrimPrefix(p.GetMetadata().GetName(), prefix)); err == nil {
+				occupied[idx] = true
+			}
+		}
+		toCreate := want - have
+		for i := 0; toCreate > 0; i++ {
+			if occupied[i] {
+				continue
+			}
 			pod := r.newPod(d, i)
 			if claimedNode != "" {
 				pod.Spec.NodeName = claimedNode
@@ -105,6 +124,7 @@ func (r *DeploymentReconciler) reconcileOne(ctx context.Context, d *v1.Deploymen
 				return fmt.Errorf("create pod: %w", err)
 			}
 			log.Printf("deployment-controller: %s/%s: created %s", d.GetMetadata().GetNamespace(), d.GetMetadata().GetName(), pod.GetMetadata().GetName())
+			toCreate--
 		}
 	case have > want:
 		for i := want; i < have; i++ {

@@ -541,3 +541,55 @@ func TestReconcileOneRecordsPendingReasonOnPortConflict(t *testing.T) {
 		t.Errorf("pending message should be cleared once scheduled, got %q", p2After.GetStatus().GetMessage())
 	}
 }
+
+func TestReconcileOneFillsGapWhenMiddleReplicaDeleted(t *testing.T) {
+	ctx := context.Background()
+	r, deployments, pods, nodes := newTestReconciler()
+	seedReadyNode(t, ctx, nodes, "node-1")
+
+	d := &v1.Deployment{
+		Metadata: &v1.ObjectMeta{Name: "web", Namespace: "default"},
+		Spec: &v1.DeploymentSpec{
+			Replicas: 3,
+			Selector: map[string]string{"app": "web"},
+			Template: &v1.PodSpec{Containers: []*v1.Container{{Name: "web", Image: "nginx"}}},
+		},
+	}
+	if err := deployments.Put(ctx, "default", "web", d); err != nil {
+		t.Fatalf("seed deployment: %v", err)
+	}
+	if err := r.reconcileOne(ctx, d); err != nil {
+		t.Fatalf("reconcileOne (initial): %v", err)
+	}
+
+	before, err := pods.List(ctx, "default")
+	if err != nil || len(before) != 3 {
+		t.Fatalf("expected 3 pods, got %d (err=%v)", len(before), err)
+	}
+
+	// Delete the MIDDLE replica (web-1), not the last one — web-0 and web-2 remain.
+	if err := pods.Delete(ctx, "default", "web-1"); err != nil {
+		t.Fatalf("delete web-1: %v", err)
+	}
+
+	if err := r.reconcileOne(ctx, d); err != nil {
+		t.Fatalf("reconcileOne (after gap): %v", err)
+	}
+
+	after, err := pods.List(ctx, "default")
+	if err != nil {
+		t.Fatalf("list pods: %v", err)
+	}
+	if len(after) != 3 {
+		t.Fatalf("want 3 pods after refilling the gap, got %d: %+v", len(after), after)
+	}
+	names := make(map[string]bool, len(after))
+	for _, p := range after {
+		names[p.GetMetadata().GetName()] = true
+	}
+	for _, want := range []string{"web-0", "web-1", "web-2"} {
+		if !names[want] {
+			t.Errorf("missing pod %q after gap-fill, have %v", want, names)
+		}
+	}
+}
