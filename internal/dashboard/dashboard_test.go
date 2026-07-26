@@ -338,6 +338,55 @@ func TestDashboardCreateDeploymentWithPersistentStorageCreatesVolume(t *testing.
 	}
 }
 
+func TestDashboardEditDeploymentPreservesExistingPersistentStorage(t *testing.T) {
+	handler, _, _ := newTestHandler(t)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	createBody := strings.NewReader(`{"name":"site","namespace":"default","image":"nginx:alpine","replicas":1,"addPersistentStorage":true,"mountPath":"/usr/share/nginx/html"}`)
+	createResp, err := http.Post(srv.URL+"/api/deployments", "application/json", createBody)
+	if err != nil {
+		t.Fatalf("POST /api/deployments (create): %v", err)
+	}
+	createResp.Body.Close()
+	if createResp.StatusCode != http.StatusOK {
+		t.Fatalf("create status = %d, want 200", createResp.StatusCode)
+	}
+
+	// The edit panel has no persistent-storage field, so a real edit request
+	// never sends addPersistentStorage/mountPath — it only edits things like
+	// image or env vars, exactly like this.
+	editBody := strings.NewReader(`{"name":"site","namespace":"default","image":"nginx:alpine","replicas":1,"env":{"FOO":"bar"}}`)
+	editResp, err := http.Post(srv.URL+"/api/deployments", "application/json", editBody)
+	if err != nil {
+		t.Fatalf("POST /api/deployments (edit): %v", err)
+	}
+	defer editResp.Body.Close()
+	if editResp.StatusCode != http.StatusOK {
+		t.Fatalf("edit status = %d, want 200", editResp.StatusCode)
+	}
+
+	var envelope struct {
+		Deployment struct {
+			Spec struct {
+				Template struct {
+					Volumes []struct {
+						VolumeName string `json:"volumeName"`
+						MountPath  string `json:"mountPath"`
+					} `json:"volumes"`
+				} `json:"template"`
+			} `json:"spec"`
+		} `json:"deployment"`
+	}
+	if err := json.NewDecoder(editResp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	vols := envelope.Deployment.Spec.Template.Volumes
+	if len(vols) != 1 || vols[0].VolumeName != "site" || vols[0].MountPath != "/usr/share/nginx/html" {
+		t.Fatalf("after edit, deployment.spec.template.volumes = %+v, want the pre-existing mount for site at /usr/share/nginx/html preserved", vols)
+	}
+}
+
 func TestDashboardCreateDeploymentRejectsPersistentStorageWithMultipleReplicas(t *testing.T) {
 	handler, _, _ := newTestHandler(t)
 	srv := httptest.NewServer(handler)

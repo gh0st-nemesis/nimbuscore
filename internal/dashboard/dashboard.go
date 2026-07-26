@@ -378,7 +378,7 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, getErr := cfg.DeploymentSvc.GetDeployment(r.Context(), &v1.GetDeploymentRequest{Namespace: req.Namespace, Name: req.Name})
+	existing, getErr := cfg.DeploymentSvc.GetDeployment(r.Context(), &v1.GetDeploymentRequest{Namespace: req.Namespace, Name: req.Name})
 	isEdit := getErr == nil
 
 	var ports []int32
@@ -442,6 +442,14 @@ func (cfg Config) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 			}
 		}
 		deployment.Spec.Template.Volumes = []*v1.VolumeMount{{VolumeName: req.Name, MountPath: req.MountPath}}
+	} else if isEdit {
+		// The edit panel has no field to request or drop persistent storage —
+		// it only ever edits command/image/env/replicas/etc — so a save that
+		// omits addPersistentStorage must not be read as "remove the volume".
+		// Carry over whatever the deployment already had.
+		if existingVolumes := existing.GetSpec().GetTemplate().GetVolumes(); len(existingVolumes) > 0 {
+			deployment.Spec.Template.Volumes = existingVolumes
+		}
 	}
 
 	created, err := cfg.DeploymentSvc.CreateDeployment(r.Context(), &v1.CreateDeploymentRequest{Deployment: deployment})
