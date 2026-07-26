@@ -1170,7 +1170,10 @@ func TestDashboardLoginPageAndAssetsAreReachableWithoutSession(t *testing.T) {
 	srv := newTestHandlerWithAuth(t, "admin", "s3cret")
 	defer srv.Close()
 
-	for _, path := range []string{"/login", "/style.css", "/login.js", "/fonts/InterVariable.woff2", "/particles.js"} {
+	for _, path := range []string{
+		"/login", "/style.css", "/login.js", "/fonts/InterVariable.woff2", "/particles.js",
+		"/vendor/three.module.min.js", "/vendor/three.core.min.js",
+	} {
 		resp, err := http.Get(srv.URL + path)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)

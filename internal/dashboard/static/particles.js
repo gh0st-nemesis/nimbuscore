@@ -1,160 +1,151 @@
+import * as THREE from "./vendor/three.module.min.js";
+
 (function () {
   const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function cssColor(varName, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    return v || fallback;
+  }
+  const accentColor = new THREE.Color(cssColor("--accent", "#7c3aed"));
+  const accent2Color = new THREE.Color(cssColor("--blue-2", "#60a5fa"));
+
+  const COUNT = reduceMotion ? 70 : 160;
+  const SPREAD_X = 900;
+  const SPREAD_Y = 550;
+  const SPREAD_Z = 900;
+  const LINK_DIST = 150;
+  const DRIFT_SPEED = 0.35;
+  const AUTO_ROTATE_SPEED = 0.00025;
 
   const canvas = document.createElement("canvas");
   canvas.className = "particles-canvas";
   document.body.prepend(canvas);
-  const ctx = canvas.getContext("2d");
 
-  const accentRGB = getComputedStyle(document.documentElement).getPropertyValue("--accent-rgb").trim() || "124, 58, 237";
-  const accent2RGB = "96, 165, 250"; // --blue-2, used for the cursor glow so it reads distinct from the particle network itself
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
 
-  const COUNT = 130;
-  const LINK_DIST = 170;
-  const MOUSE_RADIUS = 200;
-  const MOUSE_LINK_DIST = 230;
-  const SPEED = 0.35;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 4000);
+  camera.position.z = 620;
 
-  let width = 0;
-  let height = 0;
-  let particles = [];
-  const mouse = { x: -9999, y: -9999, active: false };
+  const group = new THREE.Group();
+  scene.add(group);
+
+  // --- particle points -------------------------------------------------
+  const positions = new Float32Array(COUNT * 3);
+  const velocities = new Float32Array(COUNT * 3);
+  for (let i = 0; i < COUNT; i++) {
+    positions[i * 3] = (Math.random() - 0.5) * SPREAD_X;
+    positions[i * 3 + 1] = (Math.random() - 0.5) * SPREAD_Y;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * SPREAD_Z;
+    velocities[i * 3] = (Math.random() - 0.5) * DRIFT_SPEED;
+    velocities[i * 3 + 1] = (Math.random() - 0.5) * DRIFT_SPEED;
+    velocities[i * 3 + 2] = (Math.random() - 0.5) * DRIFT_SPEED;
+  }
+  const pointsGeometry = new THREE.BufferGeometry();
+  pointsGeometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  const pointsMaterial = new THREE.PointsMaterial({
+    color: accentColor,
+    size: 5,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const points = new THREE.Points(pointsGeometry, pointsMaterial);
+  group.add(points);
+
+  // --- connecting lines, rebuilt from current positions every frame ----
+  const MAX_SEGMENTS = COUNT * 12;
+  const linePositions = new Float32Array(MAX_SEGMENTS * 2 * 3);
+  const lineGeometry = new THREE.BufferGeometry();
+  lineGeometry.setAttribute("position", new THREE.Float32BufferAttribute(linePositions, 3));
+  lineGeometry.setDrawRange(0, 0);
+  const lineMaterial = new THREE.LineBasicMaterial({
+    color: accent2Color,
+    transparent: true,
+    opacity: 0.22,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
+  group.add(lines);
+
+  function updateLines() {
+    let segIndex = 0;
+    for (let i = 0; i < COUNT && segIndex < MAX_SEGMENTS; i++) {
+      const ix = i * 3;
+      for (let j = i + 1; j < COUNT && segIndex < MAX_SEGMENTS; j++) {
+        const jx = j * 3;
+        const dx = positions[ix] - positions[jx];
+        const dy = positions[ix + 1] - positions[jx + 1];
+        const dz = positions[ix + 2] - positions[jx + 2];
+        const distSq = dx * dx + dy * dy + dz * dz;
+        if (distSq < LINK_DIST * LINK_DIST) {
+          const base = segIndex * 6;
+          linePositions[base] = positions[ix];
+          linePositions[base + 1] = positions[ix + 1];
+          linePositions[base + 2] = positions[ix + 2];
+          linePositions[base + 3] = positions[jx];
+          linePositions[base + 4] = positions[jx + 1];
+          linePositions[base + 5] = positions[jx + 2];
+          segIndex++;
+        }
+      }
+    }
+    lineGeometry.setDrawRange(0, segIndex * 2);
+    lineGeometry.attributes.position.needsUpdate = true;
+  }
+
+  function updateParticles() {
+    for (let i = 0; i < COUNT; i++) {
+      const ix = i * 3;
+      positions[ix] += velocities[ix];
+      positions[ix + 1] += velocities[ix + 1];
+      positions[ix + 2] += velocities[ix + 2];
+      if (positions[ix] < -SPREAD_X / 2 || positions[ix] > SPREAD_X / 2) velocities[ix] *= -1;
+      if (positions[ix + 1] < -SPREAD_Y / 2 || positions[ix + 1] > SPREAD_Y / 2) velocities[ix + 1] *= -1;
+      if (positions[ix + 2] < -SPREAD_Z / 2 || positions[ix + 2] > SPREAD_Z / 2) velocities[ix + 2] *= -1;
+    }
+    pointsGeometry.attributes.position.needsUpdate = true;
+  }
+
+  // --- mouse parallax ----------------------------------------------------
+  const mouse = { x: 0, y: 0 };
+  const targetCameraOffset = { x: 0, y: 0 };
+
+  function render() {
+    if (!reduceMotion) {
+      updateParticles();
+      group.rotation.y += AUTO_ROTATE_SPEED;
+      group.rotation.x += AUTO_ROTATE_SPEED * 0.3;
+      targetCameraOffset.x += (mouse.x * 80 - targetCameraOffset.x) * 0.03;
+      targetCameraOffset.y += (-mouse.y * 60 - targetCameraOffset.y) * 0.03;
+      camera.position.x = targetCameraOffset.x;
+      camera.position.y = targetCameraOffset.y;
+      camera.lookAt(0, 0, 0);
+    }
+    updateLines();
+    renderer.render(scene, camera);
+    if (!reduceMotion) requestAnimationFrame(render);
+  }
 
   function resize() {
-    width = canvas.width = window.innerWidth;
-    height = canvas.height = window.innerHeight;
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
-  function makeParticles() {
-    particles = [];
-    for (let i = 0; i < COUNT; i++) {
-      const big = Math.random() < 0.15;
-      particles.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        vx: (Math.random() - 0.5) * SPEED,
-        vy: (Math.random() - 0.5) * SPEED,
-        r: big ? 2.2 + Math.random() * 1.4 : 1 + Math.random() * 0.8,
-        glow: big,
-      });
-    }
-  }
+  render();
 
-  function step() {
-    ctx.clearRect(0, 0, width, height);
+  if (reduceMotion) return; // one static frame, no listeners, no loop
 
-    // Repel particles gently away from the cursor — this is what makes the
-    // field feel alive rather than a static wallpaper.
-    if (mouse.active) {
-      for (const p of particles) {
-        const dx = p.x - mouse.x;
-        const dy = p.y - mouse.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < MOUSE_RADIUS && dist > 0.01) {
-          const force = (1 - dist / MOUSE_RADIUS) * 0.6;
-          p.vx += (dx / dist) * force;
-          p.vy += (dy / dist) * force;
-        }
-      }
-    }
-
-    for (const p of particles) {
-      p.x += p.vx;
-      p.y += p.vy;
-      // gentle drag so the repel force doesn't accumulate into chaos
-      p.vx *= 0.98;
-      p.vy *= 0.98;
-      const minSpeed = 0.04;
-      if (Math.abs(p.vx) < minSpeed) p.vx += (Math.random() - 0.5) * 0.05;
-      if (Math.abs(p.vy) < minSpeed) p.vy += (Math.random() - 0.5) * 0.05;
-      if (p.x < 0 || p.x > width) p.vx *= -1;
-      if (p.y < 0 || p.y > height) p.vy *= -1;
-      p.x = Math.max(0, Math.min(width, p.x));
-      p.y = Math.max(0, Math.min(height, p.y));
-    }
-
-    // particle-to-particle connections
-    for (let i = 0; i < particles.length; i++) {
-      for (let j = i + 1; j < particles.length; j++) {
-        const a = particles[i];
-        const b = particles[j];
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < LINK_DIST) {
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.strokeStyle = `rgba(${accentRGB}, ${0.32 * (1 - dist / LINK_DIST)})`;
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        }
-      }
-    }
-
-    // connections from nearby particles to the cursor itself
-    if (mouse.active) {
-      for (const p of particles) {
-        const dx = p.x - mouse.x;
-        const dy = p.y - mouse.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < MOUSE_LINK_DIST) {
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.lineTo(mouse.x, mouse.y);
-          ctx.strokeStyle = `rgba(${accent2RGB}, ${0.4 * (1 - dist / MOUSE_LINK_DIST)})`;
-          ctx.lineWidth = 1.2;
-          ctx.stroke();
-        }
-      }
-    }
-
-    for (const p of particles) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${accentRGB}, 0.85)`;
-      if (p.glow) {
-        ctx.shadowColor = `rgba(${accentRGB}, 0.9)`;
-        ctx.shadowBlur = 8;
-      } else {
-        ctx.shadowBlur = 0;
-      }
-      ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-
-    if (mouse.active) {
-      ctx.beginPath();
-      ctx.arc(mouse.x, mouse.y, 2.6, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${accent2RGB}, 0.9)`;
-      ctx.shadowColor = `rgba(${accent2RGB}, 0.8)`;
-      ctx.shadowBlur = 12;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-    }
-
-    if (!reduceMotion) requestAnimationFrame(step);
-  }
-
-  resize();
-  makeParticles();
-
-  if (reduceMotion) {
-    step(); // one static frame, no motion loop, no mouse tracking
-    return;
-  }
-
-  window.addEventListener("resize", () => {
-    resize();
-    makeParticles();
-  });
+  window.addEventListener("resize", resize);
   window.addEventListener("mousemove", (ev) => {
-    mouse.x = ev.clientX;
-    mouse.y = ev.clientY;
-    mouse.active = true;
+    mouse.x = (ev.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = (ev.clientY / window.innerHeight) * 2 - 1;
   });
-  window.addEventListener("mouseleave", () => {
-    mouse.active = false;
-  });
-  requestAnimationFrame(step);
 })();

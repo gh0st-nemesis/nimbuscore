@@ -69,7 +69,8 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("/api/login", sess.handleLogin)
 	mux.HandleFunc("/api/logout", sess.handleLogout)
 	fileServer := http.FileServer(http.FS(static))
-	mux.Handle("/fonts/", fileServer) // public: self-hosted webfont, needed to render the login page, not sensitive
+	mux.Handle("/fonts/", fileServer)  // public: self-hosted webfont, needed to render the login page, not sensitive
+	mux.Handle("/vendor/", fileServer) // public: self-hosted three.js, needed by the login page's particle background
 	mux.Handle("/style.css", fileServer)
 	mux.Handle("/logo.png", fileServer)
 	mux.Handle("/login.js", fileServer)
